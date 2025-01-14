@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 
 from app.config.config import get_settings
 from app.utils.prompts import REPORT_PLANNER_QUERY_WRITER, REPORT_PLANNER_INSTRUCTIONS
-from app.utils.state import ReportState, Section, Queries
+from app.utils.state import ReportState, Section, Queries, Sections
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 import logging
 
@@ -50,24 +50,24 @@ async def plan_report(state: ReportState):
         report_organization=settings.report_structure,
         context=source_str
     )
-
-    response = claude.invoke([
+    structured_llm = claude.with_structured_output(Sections)
+    report_sections = structured_llm.invoke([
         SystemMessage(content=system_instructions),
         HumanMessage(content="Generate the report sections based on the research.")
     ])
-    print(f"Response from LLM: {response}")
-    logging.debug(f"Response from LLM: {response}")
-    logging.debug(f"Response content: {response.content}")
+    print(f"Response from LLM: {report_sections}")
+    logging.debug(f"Response from LLM: {report_sections}")
+    logging.debug(f"Response content: {report_sections.sections}")
     # Parse sections from response
-    sections = []
-    for section_data in response.content:
-        sections.append(
-            Section(
-                name=section_data["name"],
-                description=section_data["description"],
-                research=section_data["research"],
-                content=""
-            )
-        )
+    # sections = []
+    # for section_data in response.content:
+    #     sections.append(
+    #         Section(
+    #             name=section_data["name"],
+    #             description=section_data["description"],
+    #             research=section_data["research"],
+    #             content=""
+    #         )
+    #     )
 
-    return {"sections": sections}
+    return {"sections": report_sections.sections}

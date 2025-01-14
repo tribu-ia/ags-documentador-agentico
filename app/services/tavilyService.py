@@ -1,12 +1,11 @@
 import asyncio
 from typing import List, Optional
-
-from tavily import TavilyClient, AsyncTavilyClient
+from tavily import AsyncTavilyClient
 
 from app.config.config import get_settings
 
 settings = get_settings()
-tavily_client = TavilyClient(api_key=settings.tavily_api_key)
+tavily_async_client = AsyncTavilyClient(api_key=settings.tavily_api_key)
 
 
 async def tavily_search_async(
@@ -28,10 +27,12 @@ async def tavily_search_async(
         if topic == "news" and days is not None:
             search_params["days"] = days
 
+        # Use the async client's search method
         search_tasks.append(
-            tavily_client.search(**search_params)
+            tavily_async_client.search(**search_params)
         )
 
+    # Now gather will work correctly with the coroutines
     return await asyncio.gather(*search_tasks)
 
 

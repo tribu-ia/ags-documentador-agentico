@@ -29,7 +29,7 @@ async def generate_report(request: dict):
 
     state = ReportState(topic=topic)
     build = report_graph.compile()
-    result = build.invoke(state)  # Cambiar a invoke si el grafo no es asíncrono
+    result = await build.ainvoke(state)  # Cambiar a invoke si el grafo no es asíncrono
     return {"report": result}
 
 

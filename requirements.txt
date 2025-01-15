@@ -1,13 +1,13 @@
 # dependencies
 colorama
-python-dotenv~=1.0.1
+python-dotenv
 uvicorn
-pydantic~=2.10.4
-fastapi~=0.115.6
-aiokafka~=0.12.0
-SQLAlchemy~=2.0.36
+pydantic
+fastapi
+aiokafka
+SQLAlchemy
 PyJWT
-psycopg2~=2.9.10
+psycopg2
 redis
 structlog
 pydantic_settings
@@ -17,12 +17,12 @@ uvicorn
 langchain
 langchain-openai
 langsmith
-motor~=3.6.0
-pandas~=2.2.3
+motor
+pandas
 python-jobspy
-starlette~=0.41.3
-httpx~=0.28.1
-jobspy~=0.29.0
+starlette
+httpx
+jobspy
 asyncpg
 langchain_openai
 PyPDF2
@@ -34,3 +34,5 @@ langgraph
 pypdf
 tavily-python
 pydantic-settings
+langchain_anthropic
+langchain_google_vertexai

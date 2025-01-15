@@ -12,7 +12,16 @@ load_dotenv()
 class Settings(BaseSettings):
     tavily_api_key: str
     openai_api_key: str
-
+    anthropic_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    # Azure OpenAI Settings
+    azure_openai_api_key: Optional[str] = None
+    azure_openai_api_base: Optional[str] = None
+    azure_openai_api_version: Optional[str] = "2024-02-15"
+    azure_openai_deployment_name: Optional[str] = None
+    # LLM Configuration
+    default_llm_type: str = "gpt-4o-mini"
+    default_temperature: float = 0
     # Report configuration
     report_structure: str = """The report structure should focus on:
 

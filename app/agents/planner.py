@@ -1,5 +1,6 @@
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
+from langgraph.constants import Send
 
 from app.config.config import get_settings
 from app.providers.llm import LLMType, get_llm
@@ -16,6 +17,8 @@ async def plan_report(state: ReportState):
     """Generate a dynamic report plan using LLM and web research"""
 
     settings = get_settings()
+    # Get state
+    topic = state["topic"]
     # Get LLM instance based on configuration
     try:
         llm_type = LLMType(settings.default_llm_type)
@@ -28,7 +31,7 @@ async def plan_report(state: ReportState):
     # Generate initial search queries
     structured_llm = llm.with_structured_output(Queries)
     system_instructions = REPORT_PLANNER_QUERY_WRITER.format(
-        topic=state.topic,
+        topic=topic,
         report_organization=settings.report_structure,
         number_of_queries=settings.number_of_queries
     )
@@ -55,14 +58,15 @@ async def plan_report(state: ReportState):
 
     # Generate sections based on research
     system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
-        topic=state.topic,
+        topic=topic,
         report_organization=settings.report_structure,
         context=source_str
     )
     structured_llm = llm.with_structured_output(Sections)
     report_sections = structured_llm.invoke([
         SystemMessage(content=system_instructions),
-        HumanMessage(content="Generate the report sections based on the research.")
+        HumanMessage(
+            content="Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. Each section must have: name, description, plan, research, and content fields.")
     ])
     print(f"Response from LLM: {report_sections}")
     logging.debug(f"Response from LLM: {report_sections}")
@@ -80,3 +84,14 @@ async def plan_report(state: ReportState):
     #     )
 
     return {"sections": report_sections.sections}
+
+
+def initiate_section_writing(state: ReportState):
+    """ This is the "map" step when we kick off web research for some sections of the report """
+
+    # Kick off section writing in parallel via Send() API for any sections that require research
+    return [
+        Send("research", {"section": s})
+        for s in state["sections"]
+        if s.research
+    ]

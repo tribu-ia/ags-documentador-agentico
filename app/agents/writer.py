@@ -1,4 +1,5 @@
 from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.types import Send
 
 from app.config.config import get_settings
 from app.providers.llm import LLMType, get_llm
@@ -57,3 +58,15 @@ def write_report(state: ReportState):
     #print(f"Final content: {final_content}")
     #state["completed_sections"] = final_content
     return {"completed_sections": final_content}
+
+
+def initiate_final_section_writing(state: ReportState):
+    """ Write any final sections using the Send API to parallelize the process """
+
+    # Kick off section writing in parallel via Send() API for any sections that do not require research
+    return [
+        Send("write_final_sections",
+             {"section": s, "report_sections_from_research": state["report_sections_from_research"]})
+        for s in state["sections"]
+        if not s.research
+    ]

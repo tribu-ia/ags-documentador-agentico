@@ -1,4 +1,13 @@
-from app.utils.state import ReportState, Section
+from langchain_core.messages import SystemMessage, HumanMessage
+
+from app.config.config import get_settings
+from app.providers.llm import LLMType, get_llm
+from app.utils.prompts import FINAL_SECTION_WRITER
+from app.utils.state import ReportState, Section, SectionState
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def compile_report(state: ReportState):
@@ -49,3 +58,50 @@ Content:
 
 """
     return formatted_str
+
+
+def write_final_sections(state: SectionState):
+    """ Write final sections of the report, which do not require web search and use the completed sections as context """
+
+    # Get state
+    section = state["section"]
+    completed_report_sections = state["report_sections_from_research"]
+
+    # Format system instructions
+    system_instructions = FINAL_SECTION_WRITER.format(section_title=section.name,
+                                                      section_topic=section.description,
+                                                      context=completed_report_sections)
+    settings = get_settings()
+    # Get LLM instance based on configuration
+    try:
+        llm_type = LLMType(settings.default_llm_type)
+        llm = get_llm(llm_type)
+    except ValueError as e:
+        logger.warning(f"Invalid LLM type in configuration, falling back to GPT-4o-mini: {e}")
+        llm = get_llm(LLMType.GPT_4O_MINI)
+    # Generate section
+    section_content = llm.invoke([SystemMessage(content=system_instructions)] + [
+        HumanMessage(content="Generate a report section based on the provided sources.")])
+
+    # Write content to section
+    section.content = section_content.content
+
+    # Write the updated section to completed sections
+    return {"completed_sections": [section]}
+
+
+def compile_final_report(state: ReportState):
+    """ Compile the final report """
+
+    # Get sections
+    sections = state["sections"]
+    completed_sections = {s.name: s.content for s in state["completed_sections"]}
+
+    # Update sections with completed content while maintaining original order
+    for section in sections:
+        section.content = completed_sections[section.name]
+
+    # Compile final report
+    all_sections = "\n\n".join([s.content for s in sections])
+
+    return {"final_report": all_sections}

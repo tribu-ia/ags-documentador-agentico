@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools", "wheel", "poetry"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.poetry]
 name = "app"
 version = "0.1.0"
@@ -15,7 +11,6 @@ python = "^3.11"
 colorama = "*"
 python-dotenv = "*"
 uvicorn = "*"
-pydantic = "*"
 fastapi = "*"
 aiokafka = "*"
 sqlalchemy = "*"
@@ -23,10 +18,10 @@ pyjwt = "*"
 psycopg2 = "*"
 redis = "*"
 structlog = "*"
+pydantic = {extras = ["email"], version = "*"}
 pydantic-settings = "*"
 langchain-scrapegraph = "*"
 langchain = "*"
-langchain-openai = "*"
 langsmith = "*"
 motor = "*"
 pandas = "*"
@@ -35,10 +30,8 @@ starlette = "*"
 httpx = "*"
 jobspy = "*"
 asyncpg = "*"
-langchain-openai = "*"
 pypdf2 = "*"
 langchain-community = "*"
-pydantic = {extras = ["email"], version = "*"}
 python-multipart = "*"
 passlib = {extras = ["bcrypt"], version = "*"}
 langgraph = "*"
@@ -46,14 +39,14 @@ pypdf = "*"
 tavily-python = "*"
 langchain-anthropic = "*"
 langchain-google-vertexai = "*"
+langgraph-cli = {extras = ["inmem"], version = "*"}
+langchain-openai = "^0.3.0"
+poetry = "^2.0.1"
 
 [tool.poetry.dev-dependencies]
 testfixtures = "*"
 pytest = "*"
 pytest-asyncio = "*"
-
-[tool.poetry.scripts]
-start = "your_project.main:main"
 
 [build-system]
 requires = ["poetry-core"]

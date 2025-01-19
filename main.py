@@ -1,11 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from app.graph.report_graph import build_report_graph
+from app.graph.report_graph import report_graph
 from app.utils.state import ReportState
 
 app = FastAPI()
-report_graph = build_report_graph()
+
 
 
 class ReportRequest(BaseModel):

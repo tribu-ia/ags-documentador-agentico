@@ -25,3 +25,6 @@ def build_report_graph():
     graph.add_edge("write_final_sections", "compile_final_report")
     graph.add_edge("compile_final_report", END)
     return graph
+
+
+report_graph = build_report_graph()

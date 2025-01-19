@@ -1,6 +1,6 @@
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.compiler import compile_report, gather_completed_sections, write_final_sections
+from app.agents.compiler import compile_report, gather_completed_sections, write_final_sections, compile_final_report
 from app.agents.planner import plan_report, initiate_section_writing
 from app.agents.writer import write_report, initiate_final_section_writing
 from app.graph.researcher_graph import build_researcher_graph
@@ -15,6 +15,7 @@ def build_report_graph():
     graph.add_node("gather_completed_sections", gather_completed_sections)
     graph.add_node("write", write_report)
     graph.add_node("write_final_sections", write_final_sections)
+    graph.add_node("compile_final_report", compile_final_report)
     graph.add_node("compile", compile_report)
 
     graph.add_edge(START, "plan")

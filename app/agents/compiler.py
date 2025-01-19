@@ -103,5 +103,100 @@ def compile_final_report(state: ReportState):
 
     # Compile final report
     all_sections = "\n\n".join([s.content for s in sections])
+    # Prompt para estructurar el reporte final
+    final_report_prompt = f"""
+    You are an expert technical writer tasked with compiling a comprehensive, professional, and structured report about an AI tool or agent. The report must strictly follow the guidelines and sections below.
 
-    return {"final_report": all_sections}
+    ## Report Structure and Guidelines:
+
+    ### **Base Sections (Mandatory for All Agents):**
+    1. **Introduction:**
+        - Brief description of the agent: What it is and its purpose.
+        - Provide links to official documentation or the product's website.
+        - Context on why this agent was chosen.
+
+    2. **Research/Testing Objectives:**
+        - What was expected to be learned or validated with this agent?
+        - Scope and specific goals.
+
+    3. **Key Features:**
+        - Main functionalities of the agent.
+        - Types of problems it solves.
+        - Integrations with other tools or APIs.
+
+    4. **Prerequisites:**
+        - Required languages, libraries, accounts, or subscriptions.
+        - Recommended technical knowledge.
+
+    5. **Installation/Initial Setup:**
+        - Step-by-step instructions with exact commands.
+        - Include environment variables, API keys, and account access details.
+
+    6. **Practical Examples/Use Cases:**
+        - A simple, reproducible case with clear instructions.
+        - Include code snippets, screenshots, or diagrams (if applicable).
+
+    7. **Advantages and Limitations:**
+        - Strengths (e.g., ease of use, performance, scalability).
+        - Weaknesses (e.g., complexity, technical limitations, costs).
+
+    8. **Lessons Learned and Best Practices:**
+        - Tips for using the tool effectively.
+        - Challenges encountered and how they were overcome.
+
+    9. **Next Steps/Future Development:**
+        - Ideas for extending the tool, new use cases, or possible improvements.
+
+    10. **References and Resources:**
+        - Official documentation and functional links.
+        - External tutorials, forums, or communities.
+
+    ### **Specific Guidelines for Different Agent Types:**
+    - For **Frameworks (e.g., LangChain, Haystack, Rasa):**
+        - Detailed installation and dependencies (versions, libraries, recommended environments).
+        - Explanation of internal architecture (e.g., chains, memories, tools).
+        - Reproducible code snippets for running a basic agent.
+        - Steps for integrating with LLMs or external services (e.g., OpenAI, Llama2).
+
+    - For **Low-Code/No-Code Platforms (e.g., Zapier with AI, Bubble):**
+        - Onboarding instructions for the platform (creating accounts, activating plugins).
+        - Visual workflows with diagrams or screenshots.
+        - Limitations of the visual environment (what can and cannot be done without coding).
+        - A complete practical example of a visual workflow.
+
+    - For **Products with Internal Agents (SaaS):**
+        - Subscription plans and onboarding (e.g., Free, Pro).
+        - Configuration options for internal AI (e.g., prompts or model parameters).
+        - Testing key functionalities (e.g., internal chatbots, automated analysis).
+        - Usability and UX evaluation (for non-technical users).
+        - Pricing model and associated costs.
+
+    ### **Writing Standards:**
+    - **Clarity and Conciseness:** Avoid jargon; use clear, simple explanations.
+    - **Markdown Formatting:** Use headings, lists, and bold text for better readability.
+    - **Real Examples:** Include reproducible examples, not just theoretical concepts.
+    - **Functional Links:** Verify all links are working.
+    - **Periodic Updates:** Ensure the documentation remains up-to-date if the tool or process changes.
+
+    ### Provided Context:
+    {all_sections}
+
+    Now, using the sections and context provided, compile the final report. Ensure the report adheres to the structure and quality standards outlined above, with clear headers and a professional tone.
+    """
+
+    settings = get_settings()
+    # Get LLM instance based on configuration
+    try:
+        llm_type = LLMType(settings.default_llm_type)
+        llm = get_llm(llm_type)
+    except ValueError as e:
+        logger.warning(f"Invalid LLM type in configuration, falling back to GPT-4o-mini: {e}")
+        llm = get_llm(LLMType.GPT_4O_MINI)
+    # Generar el reporte final usando el modelo
+    final_report = llm.invoke(
+        [
+            SystemMessage(content="Generate a structured report."),
+            HumanMessage(content=final_report_prompt),
+        ]
+    )
+    return {"final_report": final_report.content}

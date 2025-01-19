@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools", "wheel", "poetry"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "app"
+version = "0.1.0"
+description = ""
+authors = ["Orlando Kuan <Orlandokuanb@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+colorama = "*"
+python-dotenv = "*"
+uvicorn = "*"
+pydantic = "*"
+fastapi = "*"
+aiokafka = "*"
+sqlalchemy = "*"
+pyjwt = "*"
+psycopg2 = "*"
+redis = "*"
+structlog = "*"
+pydantic-settings = "*"
+langchain-scrapegraph = "*"
+langchain = "*"
+langchain-openai = "*"
+langsmith = "*"
+motor = "*"
+pandas = "*"
+python-jobspy = "*"
+starlette = "*"
+httpx = "*"
+jobspy = "*"
+asyncpg = "*"
+langchain-openai = "*"
+pypdf2 = "*"
+langchain-community = "*"
+pydantic = {extras = ["email"], version = "*"}
+python-multipart = "*"
+passlib = {extras = ["bcrypt"], version = "*"}
+langgraph = "*"
+pypdf = "*"
+tavily-python = "*"
+langchain-anthropic = "*"
+langchain-google-vertexai = "*"
+
+[tool.poetry.dev-dependencies]
+testfixtures = "*"
+pytest = "*"
+pytest-asyncio = "*"
+
+[tool.poetry.scripts]
+start = "your_project.main:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

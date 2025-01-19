@@ -36,3 +36,5 @@ tavily-python
 pydantic-settings
 langchain_anthropic
 langchain_google_vertexai
+poetry-core
+poetry

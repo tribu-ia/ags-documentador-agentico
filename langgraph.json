@@ -1,0 +1,9 @@
+{
+    "dependencies": ["."],
+    "graphs": {
+        "report": "./app/graph/report_graph.py:graph",
+        "research": "./app/graph/researcher_graph.py:graph"
+    },
+    "python_version": "3.11",
+    "env": ".env"
+}

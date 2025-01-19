@@ -21,5 +21,6 @@ def build_report_graph():
     graph.add_conditional_edges("plan", initiate_section_writing, ["research"])
     graph.add_edge("research", "gather_completed_sections")
     graph.add_conditional_edges("gather_completed_sections", initiate_final_section_writing, ["write_final_sections"])
-    graph.add_edge("write_final_sections", END)
+    graph.add_edge("write_final_sections", "compile_final_report")
+    graph.add_edge("compile_final_report", END)
     return graph

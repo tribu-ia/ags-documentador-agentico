@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.constants import Send
 
 from app.config.config import get_settings
-from app.providers.llm import LLMType, get_llm
+from app.utils.llms import LLMManager, LLMConfig, LLMType
 from app.utils.prompts import REPORT_PLANNER_QUERY_WRITER, REPORT_PLANNER_INSTRUCTIONS
 from app.utils.state import ReportState, Section, Queries, Sections
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
@@ -13,85 +13,127 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-async def plan_report(state: ReportState):
-    """Generate a dynamic report plan using LLM and web research"""
+class ReportPlanner:
+    """Class responsible for planning and organizing report generation."""
 
-    settings = get_settings()
-    # Get state
-    topic = state["topic"]
-    # Get LLM instance based on configuration
-    try:
-        llm_type = LLMType(settings.default_llm_type)
-        llm = get_llm(llm_type)
-        logger.info(f"Using LLM: {llm_type}")
-    except ValueError as e:
-        logger.warning(f"Invalid LLM type in configuration, falling back to GPT-4o-mini: {e}")
-        llm = get_llm(LLMType.GPT_4O_MINI)
+    def __init__(self, settings=None):
+        """Initialize ReportPlanner with configuration settings."""
+        self.settings = settings or get_settings()
+        # Initialize LLMManager with configuration
+        llm_config = LLMConfig(
+            temperature=0.0,
+            streaming=True,
+            max_tokens=2000  # Adjust as needed
+        )
+        self.llm_manager = LLMManager(llm_config)
+        # Get the primary LLM for report generation
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
 
-    # Generate initial search queries
-    structured_llm = llm.with_structured_output(Queries)
-    system_instructions = REPORT_PLANNER_QUERY_WRITER.format(
-        topic=topic,
-        report_organization=settings.report_structure,
-        number_of_queries=settings.number_of_queries
-    )
+    async def generate_search_queries(self, topic: str) -> Queries:
+        """Generate initial search queries for the report topic.
 
-    results = structured_llm.invoke([
-        SystemMessage(content=system_instructions),
-        HumanMessage(content="Generate search queries for planning the report sections.")
-    ])
+        Args:
+            topic: The main topic of the report
 
-    # Perform web searches in parallel
-    query_list = [query.search_query for query in results.queries]
-    search_docs = await tavily_search_async(
-        query_list,
-        settings.tavily_topic,
-        settings.tavily_days
-    )
+        Returns:
+            Queries object containing generated search queries
+        """
+        structured_llm = self.primary_llm.with_structured_output(Queries)
+        system_instructions = REPORT_PLANNER_QUERY_WRITER.format(
+            topic=topic,
+            report_organization=self.settings.report_structure,
+            number_of_queries=self.settings.number_of_queries
+        )
 
-    # Format search results
-    source_str = deduplicate_and_format_sources(
-        search_docs,
-        max_tokens_per_source=1000,
-        include_raw_content=False
-    )
+        logger.debug(f"Generating search queries for topic: {topic}")
+        return structured_llm.invoke([
+            SystemMessage(content=system_instructions),
+            HumanMessage(content="Generate search queries for planning the report sections.")
+        ])
 
-    # Generate sections based on research
-    system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
-        topic=topic,
-        report_organization=settings.report_structure,
-        context=source_str
-    )
-    structured_llm = llm.with_structured_output(Sections)
-    report_sections = structured_llm.invoke([
-        SystemMessage(content=system_instructions),
-        HumanMessage(
-            content="Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. Each section must have: name, description, plan, research, and content fields.")
-    ])
-    print(f"Response from LLM: {report_sections}")
-    logging.debug(f"Response from LLM: {report_sections}")
-    logging.debug(f"Response content: {report_sections.sections}")
-    # Parse sections from response
-    # sections = []
-    # for section_data in response.content:
-    #     sections.append(
-    #         Section(
-    #             name=section_data["name"],
-    #             description=section_data["description"],
-    #             research=section_data["research"],
-    #             content=""
-    #         )
-    #     )
+    async def conduct_research(self, queries: list[str]) -> str:
+        """Conduct parallel web searches using provided queries.
 
-    return {"sections": report_sections.sections}
+        Args:
+            queries: List of search queries to execute
 
+        Returns:
+            Formatted string of search results
+        """
+        logger.debug(f"Conducting research with queries: {queries}")
+        search_docs = await tavily_search_async(
+            queries,
+            self.settings.tavily_topic,
+            self.settings.tavily_days
+        )
 
-def initiate_section_writing(state: ReportState):
-    """ This is the "map" step when we kick off web research for some sections of the report """
+        return deduplicate_and_format_sources(
+            search_docs,
+            max_tokens_per_source=1000,
+            include_raw_content=False
+        )
 
-    # Kick off section writing in parallel via Send() API for any sections that require research
-    return [
-        Send("research", {"section": s})
-        for s in state["sections"]
-        if s.research
-    ]
+    async def generate_sections(self, topic: str, source_str: str) -> Sections:
+        """Generate report sections based on research results.
+
+        Args:
+            topic: The main topic of the report
+            source_str: Formatted string of research results
+
+        Returns:
+            Sections object containing generated report sections
+        """
+        structured_llm = self.primary_llm.with_structured_output(Sections)
+        system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
+            topic=topic,
+            report_organization=self.settings.report_structure,
+            context=source_str
+        )
+
+        logger.debug(f"Generating sections for topic: {topic}")
+        return structured_llm.invoke([
+            SystemMessage(content=system_instructions),
+            HumanMessage(
+                content="Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. Each section must have: name, description, plan, research, and content fields."
+            )
+        ])
+
+    async def plan_report(self, state: ReportState) -> dict:
+        """Generate a dynamic report plan using LLM and web research.
+
+        Args:
+            state: Current report state containing the topic
+
+        Returns:
+            Dictionary containing generated report sections
+        """
+        topic = state["topic"]
+        logger.debug(f"Starting report planning for topic: {topic}")
+
+        # Generate search queries
+        queries_result = await self.generate_search_queries(topic)
+        query_list = [query.search_query for query in queries_result.queries]
+
+        # Conduct research
+        source_str = await self.conduct_research(query_list)
+
+        # Generate sections
+        report_sections = await self.generate_sections(topic, source_str)
+        logger.debug(f"Completed report planning for topic: {topic}")
+        return {"sections": report_sections.sections}
+
+    @staticmethod
+    def initiate_section_writing(state: ReportState) -> list[Send]:
+        """Initialize parallel section writing for sections requiring research.
+
+        Args:
+            state: Current report state containing sections
+
+        Returns:
+            List of Send objects for parallel processing
+        """
+        return [
+            Send("research", {"section": section})
+            for section in state["sections"]
+            if section.research
+        ]

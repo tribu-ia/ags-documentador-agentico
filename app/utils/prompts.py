@@ -1,9 +1,4 @@
 
-REPORT_PLAN_PROMPT = """
-You are an expert report planner. Your task is to create a structure based on the topic: {topic}.
-Include sections with descriptions and indicate which sections require research.
-"""
-
 # Planning prompts
 REPORT_PLANNER_QUERY_WRITER = """You are an expert technical writer, planning a comprehensive report.
 
@@ -180,46 +175,7 @@ FINAL_REPORT_FORMAT = """
  ## Report Structure and Guidelines:
 
  ### **Base Sections (Mandatory for All Agents):**
- 1. **Introduction:**
-     - Brief description of the agent: What it is and its purpose.
-     - Provide links to official documentation or the product's website.
-     - Context on why this agent was chosen.
-
- 2. **Research/Testing Objectives:**
-     - What was expected to be learned or validated with this agent?
-     - Scope and specific goals.
-
- 3. **Key Features:**
-     - Main functionalities of the agent.
-     - Types of problems it solves.
-     - Integrations with other tools or APIs.
-
- 4. **Prerequisites:**
-     - Required languages, libraries, accounts, or subscriptions.
-     - Recommended technical knowledge.
-
- 5. **Installation/Initial Setup:**
-     - Step-by-step instructions with exact commands.
-     - Include environment variables, API keys, and account access details.
-
- 6. **Practical Examples/Use Cases:**
-     - A simple, reproducible case with clear instructions.
-     - Include code snippets, screenshots, or diagrams (if applicable).
-
- 7. **Advantages and Limitations:**
-     - Strengths (e.g., ease of use, performance, scalability).
-     - Weaknesses (e.g., complexity, technical limitations, costs).
-
- 8. **Lessons Learned and Best Practices:**
-     - Tips for using the tool effectively.
-     - Challenges encountered and how they were overcome.
-
- 9. **Next Steps/Future Development:**
-     - Ideas for extending the tool, new use cases, or possible improvements.
-
- 10. **References and Resources:**
-     - Official documentation and functional links.
-     - External tutorials, forums, or communities.
+ {report_organization}
 
  ### **Specific Guidelines for Different Agent Types:**
  - For **Frameworks (e.g., LangChain, Haystack, Rasa):**

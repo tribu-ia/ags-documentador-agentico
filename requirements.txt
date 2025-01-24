@@ -19,10 +19,8 @@ langchain-openai
 langsmith
 motor
 pandas
-python-jobspy
 starlette
 httpx
-jobspy
 asyncpg
 langchain_openai
 PyPDF2

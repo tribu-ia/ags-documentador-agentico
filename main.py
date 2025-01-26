@@ -1,11 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from app.graph.report_graph import build_report_graph
+from app.graph.report_graph import report_graph
 from app.utils.state import ReportState
 
 app = FastAPI()
-report_graph = build_report_graph()
 
 
 class ReportRequest(BaseModel):
@@ -37,4 +36,4 @@ if __name__ == "__main__":
     import uvicorn
 
     # Ejecuta la aplicación
-    uvicorn.run(app, host="0.0.0.0", port=8098, workers=2)
+    uvicorn.run(app, host="0.0.0.0", port=8098, workers=1)

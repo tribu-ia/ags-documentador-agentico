@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     azure_openai_deployment_name: Optional[str] = None
     # LLM Configuration
     default_llm_type: str = "gpt-4o-mini"
+    GPT_4O_MINI: str = "gpt-4o-mini"
     default_temperature: float = 0
     # Monitoring Configuration
     langchain_project: str
@@ -94,6 +95,7 @@ class Settings(BaseSettings):
 10. References and Resources:
     - Official documentation.
     - Links to external tutorials, forums, and communities.
+    
 """
 
     number_of_queries: int = 3

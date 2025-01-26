@@ -1,9 +1,4 @@
 
-REPORT_PLAN_PROMPT = """
-You are an expert report planner. Your task is to create a structure based on the topic: {topic}.
-Include sections with descriptions and indicate which sections require research.
-"""
-
 # Planning prompts
 REPORT_PLANNER_QUERY_WRITER = """You are an expert technical writer, planning a comprehensive report.
 
@@ -173,3 +168,44 @@ For Conclusion/Summary:
 - For conclusion: 100-150 word limit, ## for section title, only ONE structural element at most, no sources section
 - Markdown format
 - Do not include word count or any preamble in your response"""
+
+FINAL_REPORT_FORMAT = """
+ You are an expert technical writer tasked with compiling a comprehensive, professional, and structured report about an AI tool or agent. The report must strictly follow the guidelines and sections below.
+
+ ## Report Structure and Guidelines:
+
+ ### **Base Sections (Mandatory for All Agents):**
+ {report_organization}
+
+ ### **Specific Guidelines for Different Agent Types:**
+ - For **Frameworks (e.g., LangChain, Haystack, Rasa):**
+     - Detailed installation and dependencies (versions, libraries, recommended environments).
+     - Explanation of internal architecture (e.g., chains, memories, tools).
+     - Reproducible code snippets for running a basic agent.
+     - Steps for integrating with LLMs or external services (e.g., OpenAI, Llama2).
+
+ - For **Low-Code/No-Code Platforms (e.g., Zapier with AI, Bubble):**
+     - Onboarding instructions for the platform (creating accounts, activating plugins).
+     - Visual workflows with diagrams or screenshots.
+     - Limitations of the visual environment (what can and cannot be done without coding).
+     - A complete practical example of a visual workflow.
+
+ - For **Products with Internal Agents (SaaS):**
+     - Subscription plans and onboarding (e.g., Free, Pro).
+     - Configuration options for internal AI (e.g., prompts or model parameters).
+     - Testing key functionalities (e.g., internal chatbots, automated analysis).
+     - Usability and UX evaluation (for non-technical users).
+     - Pricing model and associated costs.
+
+ ### **Writing Standards:**
+ - **Clarity and Conciseness:** Avoid jargon; use clear, simple explanations.
+ - **Markdown Formatting:** Use headings, lists, and bold text for better readability.
+ - **Real Examples:** Include reproducible examples, not just theoretical concepts.
+ - **Functional Links:** Verify all links are working.
+ - **Periodic Updates:** Ensure the documentation remains up-to-date if the tool or process changes.
+
+ ### Provided Context:
+ {all_sections}
+
+ Now, using the sections and context provided, compile the final report. Ensure the report adheres to the structure and quality standards outlined above, with clear headers and a professional tone.
+ """

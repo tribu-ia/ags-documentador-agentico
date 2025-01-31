@@ -1,14 +1,10 @@
 from typing import Annotated, TypedDict, List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, END, START
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
-from dataclasses import dataclass, asdict
+from langgraph.constants import Send
 
 from app.config.config import get_settings
-from app.providers.llm import LLMType, get_llm
+from app.utils.llms import LLMManager, LLMConfig, LLMType
 from app.utils.prompts import REPORT_PLANNER_QUERY_WRITER, REPORT_PLANNER_INSTRUCTIONS
 #from app.utils.state import ReportState, Section, Queries, Sections
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
@@ -19,146 +15,128 @@ from app.utils.state import ReportState, Queries, Sections
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Define una estructura más clara para el estado
-class State(TypedDict):
-    messages: Annotated[list, add_messages]
-    report_state: ReportState
-    search_results: str
-    queries: List[dict]  # Aseguramos que queries sea una lista de diccionarios
-    sections: List[dict]
 
-def query_generator(state: State) -> State:
-    """Node to generate search queries"""
-    settings = get_settings()
-    try:
-        llm_type = LLMType(settings.default_llm_type)
-        llm = get_llm(llm_type)
-        logger.info(f"Using LLM: {llm_type}")
-    except ValueError as e:
-        logger.warning(f"Invalid LLM type in configuration, falling back to GPT-4o-mini: {e}")
-        llm = get_llm(LLMType.GPT_4O_MINI)
+class ReportPlanner:
+    """Class responsible for planning and organizing report generation."""
 
-    structured_llm = llm.with_structured_output(Queries)
-    system_instructions = REPORT_PLANNER_QUERY_WRITER.format(
-        topic=state["report_state"].topic,
-        report_organization=settings.report_structure,
-        number_of_queries=settings.number_of_queries
-    )
+    def __init__(self, settings=None):
+        """Initialize ReportPlanner with configuration settings."""
+        self.settings = settings or get_settings()
+        # Initialize LLMManager with configuration
+        llm_config = LLMConfig(
+            temperature=0.0,
+            streaming=True,
+            max_tokens=2000  # Adjust as needed
+        )
+        self.llm_manager = LLMManager(llm_config)
+        # Get the primary LLM for report generation
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
 
-    results = structured_llm.invoke([
-        SystemMessage(content=system_instructions),
-        HumanMessage(content="Generate search queries for planning the report sections.")
-    ])
+    async def generate_search_queries(self, topic: str) -> Queries:
+        """Generate initial search queries for the report topic.
 
-    # Convertir los resultados a una lista de diccionarios
-    queries = [{"search_query": q.search_query} for q in results.queries]
-    
-    return {
-        **state,
-        "messages": state["messages"] + [SystemMessage(content=f"Generated queries: {queries}")],
-        "queries": queries
-    }
+        Args:
+            topic: The main topic of the report
 
-async def search_executor(state: State) -> State:
-    """Node to execute searches"""
-    settings = get_settings()
-    
-    # Verificar y extraer las queries de manera segura
-    queries = state.get("queries", [])
-    if not queries:
-        logger.warning("No queries found in state")
-        return {
-            **state,
-            "search_results": ""
-        }
-    
-    # Extraer las search_queries de manera segura
-    query_list = [q.get("search_query") for q in queries if q.get("search_query")]
-    
-    if not query_list:
-        logger.warning("No valid search queries found")
-        return {
-            **state,
-            "search_results": ""
-        }
+        Returns:
+            Queries object containing generated search queries
+        """
+        structured_llm = self.primary_llm.with_structured_output(Queries)
+        system_instructions = REPORT_PLANNER_QUERY_WRITER.format(
+            topic=topic,
+            report_organization=self.settings.report_structure,
+            number_of_queries=self.settings.number_of_queries
+        )
 
-    search_docs = await tavily_search_async(
-        query_list,
-        settings.tavily_topic,
-        settings.tavily_days
-    )
-    
-    source_str = deduplicate_and_format_sources(
-        search_docs,
-        max_tokens_per_source=1000,
-        include_raw_content=False
-    )
+        logger.debug(f"Generating search queries for topic: {topic}")
+        return structured_llm.invoke([
+            SystemMessage(content=system_instructions),
+            HumanMessage(content="Generate search queries for planning the report sections.")
+        ])
 
-    return {
-        **state,
-        "search_results": source_str
-    }
+    async def conduct_research(self, queries: list[str]) -> str:
+        """Conduct parallel web searches using provided queries.
 
-def section_planner(state: State):
-    """Node to plan report sections"""
-    settings = get_settings()
-    try:
-        llm_type = LLMType(settings.default_llm_type)
-        llm = get_llm(llm_type)
-    except ValueError:
-        llm = get_llm(LLMType.GPT_4O_MINI)
+        Args:
+            queries: List of search queries to execute
 
-    structured_llm = llm.with_structured_output(Sections)
-    system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
-        topic=state["report_state"].topic,
-        report_organization=settings.report_structure,
-        context=state["search_results"]
-    )
+        Returns:
+            Formatted string of search results
+        """
+        logger.debug(f"Conducting research with queries: {queries}")
+        search_docs = await tavily_search_async(
+            queries,
+            self.settings.tavily_topic,
+            self.settings.tavily_days
+        )
 
-    report_sections = structured_llm.invoke([
-        SystemMessage(content=system_instructions),
-        HumanMessage(content="Generate the report sections based on the research.")
-    ])
+        return deduplicate_and_format_sources(
+            search_docs,
+            max_tokens_per_source=1000,
+            include_raw_content=False
+        )
 
-    return {
-        **state,
-        "sections": report_sections.sections
-    }
+    async def generate_sections(self, topic: str, source_str: str) -> Sections:
+        """Generate report sections based on research results.
 
-async def plan_report(state: ReportState):
-    """Generate a dynamic report plan using LangGraph"""
-    # Initialize graph
-    graph_builder = StateGraph(State)
-    memory = MemorySaver()
+        Args:
+            topic: The main topic of the report
+            source_str: Formatted string of research results
 
-    # Add nodes
-    graph_builder.add_node("query_generator", query_generator)
-    graph_builder.add_node("search_executor", search_executor)
-    graph_builder.add_node("section_planner", section_planner)
+        Returns:
+            Sections object containing generated report sections
+        """
+        structured_llm = self.primary_llm.with_structured_output(Sections)
+        system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
+            topic=topic,
+            report_organization=self.settings.report_structure,
+            context=source_str
+        )
 
-    # Set the entry point
-    graph_builder.set_entry_point("query_generator")
+        logger.debug(f"Generating sections for topic: {topic}")
+        return structured_llm.invoke([
+            SystemMessage(content=system_instructions),
+            HumanMessage(
+                content="Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. Each section must have: name, description, plan, research, and content fields."
+            )
+        ])
 
-    # Add edges to define workflow
-    graph_builder.add_edge("query_generator", "search_executor")
-    graph_builder.add_edge("search_executor", "section_planner")
-    
-    # Set the end condition
-    graph_builder.set_finish_point("section_planner")
+    async def plan_report(self, state: ReportState) -> dict:
+        """Generate a dynamic report plan using LLM and web research.
 
-    # Compile graph
-    graph = graph_builder.compile(checkpointer=memory)
+        Args:
+            state: Current report state containing the topic
 
-    # Initialize state and run graph
-    initial_state = {
-        "messages": [],
-        "report_state": state,
-        "search_results": "",
-        "queries": [],
-        "sections": []
-    }
+        Returns:
+            Dictionary containing generated report sections
+        """
+        topic = state["topic"]
+        logger.debug(f"Starting report planning for topic: {topic}")
 
-    # Execute graph
-    final_state = await graph.ainvoke(initial_state)
+        # Generate search queries
+        queries_result = await self.generate_search_queries(topic)
+        query_list = [query.search_query for query in queries_result.queries]
 
-    return {"sections": final_state.get("sections", [])}
+        # Conduct research
+        source_str = await self.conduct_research(query_list)
+
+        # Generate sections
+        report_sections = await self.generate_sections(topic, source_str)
+        logger.debug(f"Completed report planning for topic: {topic}")
+        return {"sections": report_sections.sections}
+
+    @staticmethod
+    def initiate_section_writing(state: ReportState) -> list[Send]:
+        """Initialize parallel section writing for sections requiring research.
+
+        Args:
+            state: Current report state containing sections
+
+        Returns:
+            List of Send objects for parallel processing
+        """
+        return [
+            Send("research", {"section": section})
+            for section in state["sections"]
+            if section.research
+        ]

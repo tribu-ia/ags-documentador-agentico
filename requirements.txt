@@ -19,7 +19,6 @@ langchain-openai~=0.3.0
 langsmith
 motor
 pandas
-python-jobspy
 starlette
 httpx~=0.28.1
 jobspy

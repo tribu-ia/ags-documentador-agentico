@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Annotated
+from typing_extensions import TypedDict
+import operator
 
 
 class Section(BaseModel):
@@ -33,12 +35,26 @@ class Queries(BaseModel):
     )
 
 
-class ReportState(BaseModel):
+class ReportState(TypedDict):
     topic: str
-    sections: List[Section] = []
-    final_report: Optional[str] = ""
+    sections: list[Section]
+    final_report: str
+    completed_sections: Annotated[list, operator.add]  # Send() API key
+    report_sections_from_research: str  # String of any completed sections from research to write final sections
 
 
 class ResearchState(BaseModel):
     query: str
     documents: List[str] = []
+
+
+class SectionState(TypedDict):
+    section: Section  # Report section
+    search_queries: list[SearchQuery]  # List of search queries
+    source_str: str  # String of formatted source content from web search
+    report_sections_from_research: str  # String of any completed sections from research to write final sections
+    completed_sections: list[Section]  # Final key we duplicate in outer state for Send() API
+
+
+class SectionOutputState(TypedDict):
+    completed_sections: list[Section]  # Final key we duplicate in outer state for Send() API

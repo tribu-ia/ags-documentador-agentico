@@ -1,9 +1,9 @@
 # dependencies
 colorama
-python-dotenv
+python-dotenv~=1.0.1
 uvicorn
-pydantic
-fastapi
+pydantic~=2.9.2
+fastapi~=0.115.6
 aiokafka
 SQLAlchemy
 PyJWT
@@ -15,13 +15,13 @@ langchain_scrapegraph
 python-dotenv
 uvicorn
 langchain
-langchain-openai
+langchain-openai~=0.3.0
 langsmith
 motor
 pandas
 python-jobspy
 starlette
-httpx
+httpx~=0.28.1
 jobspy
 asyncpg
 langchain_openai
@@ -30,10 +30,17 @@ langchain-community
 pydantic[email]
 python-multipart
 passlib[bcrypt]
-langgraph
+langgraph~=0.2.64
 pypdf
 tavily-python
-pydantic-settings
+pydantic-settings~=2.7.1
 langchain_anthropic
 langchain_google_vertexai
 langchain_core
+google-generativeai
+google-generativeai tavily-python
+langchain-core~=0.3.30
+protobuf~=5.29.3
+jsonschema~=4.23.0
+langchain-anthropic~=0.3.3
+langchain-google-vertexai~=2.0.11

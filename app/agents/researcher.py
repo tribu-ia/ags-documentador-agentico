@@ -1,71 +1,285 @@
-from typing import List
-
-from langchain_core.messages import SystemMessage, HumanMessage
+from typing import List, Dict, Set
+import google.generativeai as genai
+import hashlib
+import re
+from dataclasses import dataclass
+from enum import Enum
+import asyncio
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log
+)
+import logging
+import google.api_core.exceptions
 
 from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
-from app.utils.llms import LLMConfig, LLMManager, LLMType
-from app.utils.prompts import RESEARCH_QUERY_WRITER, SECTION_WRITER
-from app.utils.state import ResearchState, SectionState, Queries, Section
-import logging
+from app.utils.state import ResearchState, SectionState, Section
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+class SearchEngine(Enum):
+    TAVILY = "tavily"
+    GEMINI = "gemini"
+    DEEP_RESEARCH = "deep_research"
+
+@dataclass
+class QueryValidation:
+    specificity: float
+    relevance: float
+    clarity: float
+    
+    @property
+    def overall_score(self) -> float:
+        return (self.specificity + self.relevance + self.clarity) / 3
 
 class ResearchManager:
-    """Class responsible for managing research operations including query generation,
-    web searching, and section writing."""
-
     def __init__(self, settings=None):
-        """Initialize ResearchManager with configuration settings.
-
-        Args:
-            settings: Optional application settings. If None, will load default settings.
-        """
+        """Initialize ResearchManager with configuration settings."""
         self.settings = settings or get_settings()
+        self.max_retries = 3
+        self.min_wait = 1
+        self.max_wait = 10
+        
+        # Initialize Gemini API
+        genai.configure(api_key=self.settings.gemini_api_key)
+        self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+        self.query_cache: Set[str] = set()
 
-        # Initialize LLM manager with research-specific configuration
-        llm_config = LLMConfig(
-            temperature=0.0,  # Use deterministic output for research
-            streaming=True,
-            max_tokens=2000  # Adjust based on expected response lengths
-        )
-        self.llm_manager = LLMManager(llm_config)
+    def _normalize_query(self, query: str) -> str:
+        """Normalize a query by removing extra spaces and converting to lowercase."""
+        return re.sub(r'\s+', ' ', query.lower().strip())
 
-        # Get primary LLM for research operations
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+    def _get_query_hash(self, query: str) -> str:
+        """Generate a hash for a query to help with deduplication."""
+        return hashlib.md5(query.encode()).hexdigest()
 
-    async def generate_queries(self, state: SectionState) -> dict:
-        """Generate search queries for a section.
-
-        Args:
-            state: Current section state containing the section details
-
-        Returns:
-            dict: Dictionary containing generated search queries
-        """
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=4, max=20),
+        retry=retry_if_exception_type((
+            TimeoutError, 
+            ConnectionError, 
+            Exception,
+            google.api_core.exceptions.ResourceExhausted
+        )),
+        before_sleep=before_sleep_log(logger, logging.WARNING)
+    )
+    async def _call_gemini_with_retry(self, prompt: str) -> str:
+        """Helper method to make Gemini API calls with retry logic."""
         try:
-            logger.debug(f"Generating queries for section: {state['section'].name}")
-            section = state["section"]
-
-            structured_llm = self.primary_llm.with_structured_output(Queries)
-
-            system_instructions = RESEARCH_QUERY_WRITER.format(
-                section_topic=section.description,
-                number_of_queries=self.settings.number_of_queries
+            if len(prompt) > 30000:
+                prompt = prompt[:30000] + "..."
+            
+            response = await self.gemini_model.generate_content_async(
+                prompt,
+                generation_config={
+                    'temperature': 0.1,
+                    'max_output_tokens': 8192,
+                    'top_p': 0.8,
+                    'top_k': 40
+                }
             )
+            return response.text.strip() if response else ""
+        except Exception as e:
+            logger.warning(f"Gemini API call failed: {str(e)}")
+            if "ResourceExhausted" in str(e):
+                logger.error("Resource exhausted error - waiting longer before retry")
+                await asyncio.sleep(10)
+            raise
 
-            queries = await structured_llm.ainvoke([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate search queries on the provided topic.")
-            ])
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((TimeoutError, ConnectionError, Exception)),
+        before_sleep=before_sleep_log(logger, logging.WARNING)
+    )
+    async def validate_query(self, query: str) -> QueryValidation:
+        """Validate a search query using Gemini's capabilities."""
+        try:
+            prompt = f"""
+            Evaluate this search query: "{query}"
+            Score the following criteria (0.0 to 1.0):
+            - Specificity: How specific and focused is the query?
+            - Relevance: How likely is it to return useful results?
+            - Clarity: How clear and well-formed is the query?
+            Return only the scores in JSON format.
+            """
+            
+            response = await self._call_gemini_with_retry(prompt)
+            scores = eval(response)
+            return QueryValidation(
+                specificity=scores['specificity'],
+                relevance=scores['relevance'],
+                clarity=scores['clarity']
+            )
+        except Exception as e:
+            logger.error(f"Query validation failed: {str(e)}")
+            return QueryValidation(specificity=0.0, relevance=0.0, clarity=0.0)
 
-            logger.debug(f"Generated {len(queries.queries)} queries")
-            return {"search_queries": queries.queries}
+    async def generate_initial_queries(self, state: SectionState) -> List[str]:
+        """Generate initial queries using Gemini with retry logic."""
+        try:
+            prompt = f"""
+            Generate {self.settings.number_of_queries} specific and diverse search queries for researching:
+            Topic: {state['section'].name}
+            Context: {state['section'].description}
+
+            Requirements:
+            - Each query should focus on a different aspect
+            - Make queries specific and actionable
+            - Avoid generic or overly broad queries
+            - Include both factual and analytical queries
+
+            Return only the numbered list of queries, one per line.
+            Maximum number of queries: {self.settings.number_of_queries}
+            """
+            
+            response = await self._call_gemini_with_retry(prompt)
+            
+            if not response:
+                logger.warning("Empty response from Gemini after retries")
+                return []
+                
+            queries = response.split('\n')
+            queries = [q.strip() for q in queries if q.strip()][:self.settings.number_of_queries]
+            
+            return queries
 
         except Exception as e:
-            logger.error(f"Error generating queries: {str(e)}")
+            logger.error(f"Error in generate_initial_queries after retries: {str(e)}")
+            return []
+
+    async def generate_queries(self, state: SectionState) -> dict:
+        """Generate and validate search queries using multiple engines."""
+        try:
+            logger.debug(f"Generating queries for section: {state['section'].name}")
+            
+            initial_queries = await self.generate_initial_queries(state)
+            
+            if not initial_queries:
+                logger.warning("No initial queries generated after retries")
+                return {"search_queries": []}
+            
+            validated_queries = []
+            for query in initial_queries:
+                try:
+                    normalized_query = self._normalize_query(query)
+                    query_hash = self._get_query_hash(normalized_query)
+                    
+                    if query_hash in self.query_cache:
+                        continue
+                    
+                    validation = await self.validate_query(normalized_query)
+                    
+                    if validation.overall_score >= 0.6:
+                        validated_queries.append({
+                            'search_query': normalized_query,
+                            'validation': validation,
+                            'engines': self._select_search_engines(validation)
+                        })
+                        self.query_cache.add(query_hash)
+                        
+                    if len(validated_queries) >= self.settings.number_of_queries:
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Error processing query '{query}' after retries: {str(e)}")
+                    continue
+            
+            return {"search_queries": validated_queries}
+
+        except Exception as e:
+            logger.error(f"Error generating queries after retries: {str(e)}")
+            return {"search_queries": []}
+
+    async def write_section(self, state: SectionState) -> dict:
+        """Write a section based on research results using Gemini."""
+        try:
+            logger.debug(f"Writing section: {state['section'].name}")
+            section = state["section"]
+            source_str = state["source_str"]
+
+            if len(source_str) > 25000:
+                logger.warning("Source material too long, truncating...")
+                source_str = source_str[:25000] + "... [truncated for length]"
+
+            prompt = f"""
+            Write a comprehensive section about: {section.name}
+            
+            Context and requirements:
+            - Topic description: {section.description}
+            - Use the following source material: {source_str}
+            
+            Guidelines:
+            - Be thorough but concise
+            - Include key facts and analysis
+            - Maintain a professional tone
+            - Organize information logically
+            - Cite sources where appropriate
+            
+            Maximum length: 2000 words.
+            Write the section content now.
+            """
+
+            try:
+                section_content = await self._call_gemini_with_retry(prompt)
+                if not section_content:
+                    raise ValueError("Empty response from Gemini")
+                
+                section.content = section_content
+                logger.debug(f"Completed writing section: {section.name}")
+                return {"completed_sections": [section]}
+
+            except Exception as e:
+                logger.error(f"Error in first attempt, trying with reduced content: {str(e)}")
+                shorter_prompt = f"""
+                Write a brief section about: {section.name}
+                Topic description: {section.description}
+                Key points from sources: {source_str[:5000]}...
+                
+                Write a concise summary (max 500 words).
+                """
+                section_content = await self._call_gemini_with_retry(shorter_prompt)
+                section.content = section_content
+                return {"completed_sections": [section]}
+
+        except Exception as e:
+            logger.error(f"Error writing section: {str(e)}")
+            section.content = f"Error generating content for section: {section.name}. Please try again later."
+            return {"completed_sections": [section]}
+
+    def _select_search_engines(self, validation: QueryValidation) -> List[SearchEngine]:
+        """Select appropriate search engines based on query validation."""
+        engines = []
+        
+        # Always include Tavily for baseline results
+        engines.append(SearchEngine.TAVILY)
+        
+        # Add Gemini for highly specific queries
+        if validation.specificity >= 0.8:
+            engines.append(SearchEngine.GEMINI)
+        
+        # Add Deep Research for complex queries needing detailed analysis
+        if validation.relevance >= 0.8 and validation.clarity >= 0.7:
+            engines.append(SearchEngine.DEEP_RESEARCH)
+        
+        return engines
+
+    async def research_section(self, section: Section) -> Section:
+        """Perform complete research process for a single section."""
+        try:
+            state = SectionState(section=section)
+            state.update(await self.generate_queries(state))
+            state.update(await self.search_web(state))
+            result = await self.write_section(state)
+            return result["completed_sections"][0]
+        except Exception as e:
+            logger.error(f"Error researching section {section.name}: {str(e)}")
             raise
 
     async def search_web(self, state: SectionState) -> dict:
@@ -103,70 +317,6 @@ class ResearchManager:
             logger.error(f"Error during web search: {str(e)}")
             raise
 
-    async def write_section(self, state: SectionState) -> dict:
-        """Write a section based on research results.
-
-        Args:
-            state: Current section state containing the section and source material
-
-        Returns:
-            dict: Dictionary containing the completed section
-        """
-        try:
-            logger.debug(f"Writing section: {state['section'].name}")
-            section = state["section"]
-            source_str = state["source_str"]
-
-            system_instructions = SECTION_WRITER.format(
-                section_title=section.name,
-                section_topic=section.description,
-                context=source_str
-            )
-
-            # Generate section content
-            section_content = await self.primary_llm.ainvoke([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate a report section based on the provided sources.")
-            ])
-
-            # Update section content
-            section.content = section_content.content
-            logger.debug(f"Completed writing section: {section.name}")
-
-            return {"completed_sections": [section]}
-
-        except Exception as e:
-            logger.error(f"Error writing section: {str(e)}")
-            raise
-
-    async def research_section(self, section: Section) -> Section:
-        """Perform complete research process for a single section.
-
-        Args:
-            section: Section to research
-
-        Returns:
-            Section: Completed section with research content
-        """
-        try:
-            # Initialize state
-            state = SectionState(section=section)
-
-            # Generate queries
-            state.update(await self.generate_queries(state))
-
-            # Perform web search
-            state.update(await self.search_web(state))
-
-            # Write section
-            result = await self.write_section(state)
-
-            return result["completed_sections"][0]
-
-        except Exception as e:
-            logger.error(f"Error researching section {section.name}: {str(e)}")
-            raise
-
     def cleanup(self):
-        """Cleanup method to clear LLM caches when done."""
-        self.llm_manager.clear_caches()
+        """Cleanup method to clear Gemini API caches when done."""
+        pass

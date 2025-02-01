@@ -28,7 +28,6 @@ langchain-community
 pydantic[email]
 python-multipart
 passlib[bcrypt]
-langgraph
 pypdf
 tavily-python
 pydantic-settings
@@ -36,4 +35,4 @@ langchain_anthropic
 langchain_google_vertexai
 poetry-core
 poetry
-langgraph-cli[inmem]
+langgraph~=0.2.64

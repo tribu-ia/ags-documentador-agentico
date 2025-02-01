@@ -1,8 +1,9 @@
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional, Protocol
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from enum import Enum
 import asyncio
 from tenacity import (
@@ -13,11 +14,18 @@ from tenacity import (
     before_sleep_log
 )
 import logging
-import google.api_core.exceptions
 
 from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import ResearchState, SectionState, Section
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+import sqlite3
+from contextlib import asynccontextmanager
+from pydantic import BaseModel, Field
+from abc import ABC, abstractmethod
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -37,18 +45,129 @@ class QueryValidation:
     def overall_score(self) -> float:
         return (self.specificity + self.relevance + self.clarity) / 3
 
+class ResearchStatus(Enum):
+    NOT_STARTED = "not_started"
+    GENERATING_QUERIES = "generating_queries"
+    SEARCHING = "searching"
+    WRITING = "writing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class ResearchStateSchema(BaseModel):
+    """Schema for validating research state"""
+    section_id: str
+    status: ResearchStatus
+    queries: List[Dict] = Field(default_factory=list)
+    sources: List[Dict] = Field(default_factory=list)
+    content: Optional[str] = None
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    error_log: List[Dict] = Field(default_factory=list)
+
+class ResearchRepository(Protocol):
+    """Interface for research state persistence"""
+    async def save_state(self, section_id: str, state: Dict) -> None:
+        """Save research state"""
+        pass
+
+    async def load_state(self, section_id: str) -> Optional[Dict]:
+        """Load research state"""
+        pass
+
+    async def log_error(self, section_id: str, error_message: str) -> None:
+        """Log error message"""
+        pass
+
+class SQLiteResearchRepository(ResearchRepository):
+    def __init__(self, db_path: str = "research_state.db"):
+        """Initialize SQLite repository"""
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize SQLite database with required tables"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS research_state (
+                    section_id TEXT PRIMARY KEY,
+                    state_json TEXT,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS error_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    section_id TEXT,
+                    error_message TEXT,
+                    timestamp TIMESTAMP
+                )
+            """)
+
+    async def save_state(self, section_id: str, state: Dict) -> None:
+        """Save research state to database"""
+        try:
+            # Validate state against schema
+            state_model = ResearchStateSchema(**state)
+            state_json = json.dumps(state_model.dict())
+            
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO research_state 
+                    (section_id, state_json, created_at, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, (section_id, state_json))
+                
+        except Exception as e:
+            logger.error(f"Error saving state for section {section_id}: {str(e)}")
+            raise
+
+    async def load_state(self, section_id: str) -> Optional[Dict]:
+        """Load research state from database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT state_json FROM research_state WHERE section_id = ?",
+                    (section_id,)
+                )
+                result = cursor.fetchone()
+                
+                if result:
+                    state_dict = json.loads(result[0])
+                    # Validate loaded state
+                    state_model = ResearchStateSchema(**state_dict)
+                    return state_model.dict()
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error loading state for section {section_id}: {str(e)}")
+            return None
+
+    async def log_error(self, section_id: str, error_message: str) -> None:
+        """Log errors to database"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("""
+                    INSERT INTO error_log (section_id, error_message, timestamp)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (section_id, error_message))
+        except Exception as e:
+            logger.error(f"Error logging error for section {section_id}: {str(e)}")
+
 class ResearchManager:
-    def __init__(self, settings=None):
-        """Initialize ResearchManager with configuration settings."""
+    def __init__(self, settings=None, repository: Optional[ResearchRepository] = None):
+        """Initialize ResearchManager with configuration settings and repository."""
         self.settings = settings or get_settings()
         self.max_retries = 3
         self.min_wait = 1
         self.max_wait = 10
         
         # Initialize Gemini API
-        genai.configure(api_key=self.settings.gemini_api_key)
+        genai.configure(api_key=self.settings.google_api_key)
         self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
         self.query_cache: Set[str] = set()
+        
+        # Initialize repository (default to SQLite if none provided)
+        self.repository = repository or SQLiteResearchRepository()
 
     def _normalize_query(self, query: str) -> str:
         """Normalize a query by removing extra spaces and converting to lowercase."""
@@ -65,7 +184,7 @@ class ResearchManager:
             TimeoutError, 
             ConnectionError, 
             Exception,
-            google.api_core.exceptions.ResourceExhausted
+            google_exceptions.ResourceExhausted
         )),
         before_sleep=before_sleep_log(logger, logging.WARNING)
     )
@@ -270,17 +389,101 @@ class ResearchManager:
         
         return engines
 
-    async def research_section(self, section: Section) -> Section:
-        """Perform complete research process for a single section."""
+    async def _update_state(self, section: Section, status: ResearchStatus, **kwargs):
+        """Update and save research state"""
         try:
-            state = SectionState(section=section)
-            state.update(await self.generate_queries(state))
-            state.update(await self.search_web(state))
-            result = await self.write_section(state)
-            return result["completed_sections"][0]
+            current_state = await self.repository.load_state(section.id) or {}
+            
+            # Update state with new information
+            new_state = {
+                "section_id": section.id,
+                "status": status,
+                "last_updated": datetime.utcnow(),
+                **current_state,
+                **kwargs
+            }
+            
+            await self.repository.save_state(section.id, new_state)
+            
         except Exception as e:
-            logger.error(f"Error researching section {section.name}: {str(e)}")
+            error_msg = f"Error updating state: {str(e)}"
+            logger.error(error_msg)
+            await self.repository.log_error(section.id, error_msg)
+
+    async def research_section(self, section: Section) -> Section:
+        """Perform complete research process for a single section with state management."""
+        try:
+            # Initialize or recover state
+            state = await self.repository.load_state(section.id)
+            if state and state["status"] == ResearchStatus.COMPLETED:
+                logger.info(f"Section {section.id} already completed, loading from state")
+                section.content = state["content"]
+                return section
+
+            # Start research process
+            await self._update_state(section, ResearchStatus.GENERATING_QUERIES)
+            section_state = SectionState(section=section)
+            
+            # Generate queries
+            queries_result = await self.generate_queries(section_state)
+            await self._update_state(
+                section, 
+                ResearchStatus.SEARCHING,
+                queries=queries_result["search_queries"]
+            )
+            section_state.update(queries_result)
+            
+            # Perform web search
+            search_result = await self.search_web(section_state)
+            await self._update_state(
+                section,
+                ResearchStatus.WRITING,
+                sources=search_result["source_str"]
+            )
+            section_state.update(search_result)
+            
+            # Write section
+            write_result = await self.write_section(section_state)
+            completed_section = write_result["completed_sections"][0]
+            
+            # Update final state
+            await self._update_state(
+                section,
+                ResearchStatus.COMPLETED,
+                content=completed_section.content
+            )
+            
+            return completed_section
+            
+        except Exception as e:
+            error_msg = f"Error researching section {section.id}: {str(e)}"
+            logger.error(error_msg)
+            await self._update_state(section, ResearchStatus.FAILED)
+            await self.repository.log_error(section.id, error_msg)
             raise
+
+    async def recover_state(self, section: Section) -> Optional[Section]:
+        """Attempt to recover research state for a section"""
+        try:
+            state = await self.repository.load_state(section.id)
+            if not state:
+                return None
+                
+            if state["status"] == ResearchStatus.COMPLETED:
+                section.content = state["content"]
+                return section
+                
+            # If failed or incomplete, return last known state
+            return Section(
+                id=section.id,
+                name=section.name,
+                description=section.description,
+                content=state.get("content", "")
+            )
+            
+        except Exception as e:
+            logger.error(f"Error recovering state for section {section.id}: {str(e)}")
+            return None
 
     async def search_web(self, state: SectionState) -> dict:
         """Perform web searches based on generated queries.

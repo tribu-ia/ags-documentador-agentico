@@ -14,21 +14,85 @@ from tenacity import (
     before_sleep_log
 )
 import logging
+import json
+from datetime import datetime
+import sqlite3
+import time
+from functools import wraps
+import traceback
+from contextlib import contextmanager
+import sys
 
 from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import ResearchState, SectionState, Section
-import json
 import os
-from datetime import datetime
 from pathlib import Path
-import sqlite3
 from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
 
-logging.basicConfig(level=logging.DEBUG)
+# Configuración avanzada de logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('research.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
+
+@dataclass
+class MetricsData:
+    """Estructura para almacenar métricas de rendimiento"""
+    start_time: float
+    end_time: float = 0
+    tokens_used: int = 0
+    api_calls: int = 0
+    errors: List[Dict] = None
+
+    def __post_init__(self):
+        self.errors = self.errors or []
+
+    @property
+    def duration(self) -> float:
+        """Calcula la duración en segundos"""
+        if self.end_time:
+            return self.end_time - self.start_time
+        return time.time() - self.start_time
+
+    def to_dict(self) -> Dict:
+        """Convierte las métricas a diccionario"""
+        return {
+            'duration_seconds': self.duration,
+            'tokens_used': self.tokens_used,
+            'api_calls': self.api_calls,
+            'errors': self.errors
+        }
+
+def track_metrics(func):
+    """Decorador para trackear métricas de rendimiento"""
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        metrics = MetricsData(start_time=time.time())
+        
+        try:
+            result = await func(self, *args, **kwargs)
+            return result
+        except Exception as e:
+            metrics.errors.append({
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'traceback': traceback.format_exc()
+            })
+            raise
+        finally:
+            metrics.end_time = time.time()
+            if hasattr(self, 'repository'):
+                await self.repository.save_metrics(metrics.to_dict())
+            
+    return wrapper
 
 class SearchEngine(Enum):
     TAVILY = "tavily"
@@ -77,6 +141,10 @@ class ResearchRepository(Protocol):
         """Log error message"""
         pass
 
+    async def save_metrics(self, metrics: Dict) -> None:
+        """Save performance metrics"""
+        pass
+
 class SQLiteResearchRepository(ResearchRepository):
     def __init__(self, db_path: str = "research_state.db"):
         """Initialize SQLite repository"""
@@ -86,6 +154,7 @@ class SQLiteResearchRepository(ResearchRepository):
     def _init_db(self):
         """Initialize SQLite database with required tables"""
         with sqlite3.connect(self.db_path) as conn:
+            # Existing tables
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS research_state (
                     section_id TEXT PRIMARY KEY,
@@ -102,48 +171,17 @@ class SQLiteResearchRepository(ResearchRepository):
                     timestamp TIMESTAMP
                 )
             """)
-
-    async def save_state(self, section_id: str, state: Dict) -> None:
-        """Save research state to database"""
-        try:
-            # Validate state against schema
-            state_model = ResearchStateSchema(**state)
-            state_json = json.dumps(state_model.dict())
-            
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO research_state 
-                    (section_id, state_json, created_at, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, (section_id, state_json))
-                
-        except Exception as e:
-            logger.error(f"Error saving state for section {section_id}: {str(e)}")
-            raise
-
-    async def load_state(self, section_id: str) -> Optional[Dict]:
-        """Load research state from database"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute(
-                    "SELECT state_json FROM research_state WHERE section_id = ?",
-                    (section_id,)
+            # New table for metrics
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS performance_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    metrics_json TEXT,
+                    timestamp TIMESTAMP
                 )
-                result = cursor.fetchone()
-                
-                if result:
-                    state_dict = json.loads(result[0])
-                    # Validate loaded state
-                    state_model = ResearchStateSchema(**state_dict)
-                    return state_model.dict()
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error loading state for section {section_id}: {str(e)}")
-            return None
+            """)
 
-    async def log_error(self, section_id: str, error_message: str) -> None:
-        """Log errors to database"""
+    async def save_metrics(self, metrics: Dict) -> None:
+        """Save performance metrics to database"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
@@ -151,23 +189,35 @@ class SQLiteResearchRepository(ResearchRepository):
                     VALUES (?, ?, CURRENT_TIMESTAMP)
                 """, (section_id, error_message))
         except Exception as e:
-            logger.error(f"Error logging error for section {section_id}: {str(e)}")
+            logger.error(f"Error saving metrics: {str(e)}")
 
 class ResearchManager:
-    def __init__(self, settings=None, repository: Optional[ResearchRepository] = None):
+    def __init__(self, settings=None, repository: Optional[ResearchRepository] = None, verbose: bool = False):
         """Initialize ResearchManager with configuration settings and repository."""
         self.settings = settings or get_settings()
         self.max_retries = 3
         self.min_wait = 1
         self.max_wait = 10
+        self.verbose = verbose
         
         # Initialize Gemini API
         genai.configure(api_key=self.settings.google_api_key)
         self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
         self.query_cache: Set[str] = set()
         
-        # Initialize repository (default to SQLite if none provided)
+        # Initialize repository
         self.repository = repository or SQLiteResearchRepository()
+        
+        # Configure verbose logging
+        if verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
+        else:
+            logging.getLogger().setLevel(logging.INFO)
+
+    def debug_log(self, message: str):
+        """Utility method for debug logging"""
+        if self.verbose:
+            logger.debug(message)
 
     def _normalize_query(self, query: str) -> str:
         """Normalize a query by removing extra spaces and converting to lowercase."""
@@ -177,22 +227,16 @@ class ResearchManager:
         """Generate a hash for a query to help with deduplication."""
         return hashlib.md5(query.encode()).hexdigest()
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=4, max=20),
-        retry=retry_if_exception_type((
-            TimeoutError, 
-            ConnectionError, 
-            Exception,
-            google_exceptions.ResourceExhausted
-        )),
-        before_sleep=before_sleep_log(logger, logging.WARNING)
-    )
+    @track_metrics
     async def _call_gemini_with_retry(self, prompt: str) -> str:
         """Helper method to make Gemini API calls with retry logic."""
         try:
+            self.debug_log(f"Making Gemini API call with prompt length: {len(prompt)}")
+            start_time = time.time()
+            
             if len(prompt) > 30000:
                 prompt = prompt[:30000] + "..."
+                self.debug_log("Prompt truncated due to length")
             
             response = await self.gemini_model.generate_content_async(
                 prompt,
@@ -203,9 +247,14 @@ class ResearchManager:
                     'top_k': 40
                 }
             )
+            
+            duration = time.time() - start_time
+            self.debug_log(f"Gemini API call completed in {duration:.2f} seconds")
+            
             return response.text.strip() if response else ""
+            
         except Exception as e:
-            logger.warning(f"Gemini API call failed: {str(e)}")
+            logger.error(f"Gemini API call failed: {str(e)}")
             if "ResourceExhausted" in str(e):
                 logger.error("Resource exhausted error - waiting longer before retry")
                 await asyncio.sleep(10)
@@ -410,9 +459,13 @@ class ResearchManager:
             logger.error(error_msg)
             await self.repository.log_error(section.id, error_msg)
 
+    @track_metrics
     async def research_section(self, section: Section) -> Section:
         """Perform complete research process for a single section with state management."""
         try:
+            logger.info(f"Starting research for section: {section.name}")
+            start_time = time.time()
+            
             # Initialize or recover state
             state = await self.repository.load_state(section.id)
             if state and state["status"] == ResearchStatus.COMPLETED:
@@ -420,44 +473,31 @@ class ResearchManager:
                 section.content = state["content"]
                 return section
 
-            # Start research process
+            # Process steps with detailed logging
+            self.debug_log("Generating queries...")
             await self._update_state(section, ResearchStatus.GENERATING_QUERIES)
             section_state = SectionState(section=section)
             
-            # Generate queries
             queries_result = await self.generate_queries(section_state)
-            await self._update_state(
-                section, 
-                ResearchStatus.SEARCHING,
-                queries=queries_result["search_queries"]
-            )
-            section_state.update(queries_result)
+            logger.info(f"Generated {len(queries_result['search_queries'])} queries")
             
-            # Perform web search
+            self.debug_log("Performing web search...")
+            await self._update_state(section, ResearchStatus.SEARCHING)
             search_result = await self.search_web(section_state)
-            await self._update_state(
-                section,
-                ResearchStatus.WRITING,
-                sources=search_result["source_str"]
-            )
-            section_state.update(search_result)
             
-            # Write section
+            self.debug_log("Writing section content...")
+            await self._update_state(section, ResearchStatus.WRITING)
             write_result = await self.write_section(section_state)
-            completed_section = write_result["completed_sections"][0]
             
-            # Update final state
-            await self._update_state(
-                section,
-                ResearchStatus.COMPLETED,
-                content=completed_section.content
-            )
+            duration = time.time() - start_time
+            logger.info(f"Research completed in {duration:.2f} seconds")
             
-            return completed_section
+            return write_result["completed_sections"][0]
             
         except Exception as e:
             error_msg = f"Error researching section {section.id}: {str(e)}"
             logger.error(error_msg)
+            logger.error(f"Traceback: {traceback.format_exc()}")
             await self._update_state(section, ResearchStatus.FAILED)
             await self.repository.log_error(section.id, error_msg)
             raise
@@ -523,3 +563,15 @@ class ResearchManager:
     def cleanup(self):
         """Cleanup method to clear Gemini API caches when done."""
         pass
+
+# Uso básico con modo verbose
+manager = ResearchManager(verbose=True)
+
+# Acceso a métricas
+async def main():
+    section = Section(id="test", name="Test Section", description="Test")
+    try:
+        result = await manager.research_section(section)
+        # Las métricas se guardan automáticamente en la base de datos
+    except Exception as e:
+        logger.error("Research failed", exc_info=True)

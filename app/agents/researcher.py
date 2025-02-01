@@ -32,7 +32,7 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
 
-# Configuraci√≥n avanzada de logging
+# ConfiguraciÛn avanzada de logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MetricsData:
-    """Estructura para almacenar m√©tricas de rendimiento"""
+    """Estructura para almacenar mÈtricas de rendimiento"""
     start_time: float
     end_time: float = 0
     tokens_used: int = 0
@@ -57,13 +57,13 @@ class MetricsData:
 
     @property
     def duration(self) -> float:
-        """Calcula la duraci√≥n en segundos"""
+        """Calcula la duraciÛn en segundos"""
         if self.end_time:
             return self.end_time - self.start_time
         return time.time() - self.start_time
 
     def to_dict(self) -> Dict:
-        """Convierte las m√©tricas a diccionario"""
+        """Convierte las mÈtricas a diccionario"""
         return {
             'duration_seconds': self.duration,
             'tokens_used': self.tokens_used,
@@ -72,7 +72,7 @@ class MetricsData:
         }
 
 def track_metrics(func):
-    """Decorador para trackear m√©tricas de rendimiento"""
+    """Decorador para trackear mÈtricas de rendimiento"""
     @wraps(func)
     async def wrapper(self, *args, **kwargs):
         metrics = MetricsData(start_time=time.time())
@@ -564,14 +564,14 @@ class ResearchManager:
         """Cleanup method to clear Gemini API caches when done."""
         pass
 
-# Uso b√°sico con modo verbose
+# Uso b·sico con modo verbose
 manager = ResearchManager(verbose=True)
 
-# Acceso a m√©tricas
+# Acceso a mÈtricas
 async def main():
     section = Section(id="test", name="Test Section", description="Test")
     try:
         result = await manager.research_section(section)
-        # Las m√©tricas se guardan autom√°ticamente en la base de datos
+        # Las mÈtricas se guardan autom·ticamente en la base de datos
     except Exception as e:
         logger.error("Research failed", exc_info=True)

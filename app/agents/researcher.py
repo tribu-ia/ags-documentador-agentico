@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from typing import List, Dict, Set, Optional, Protocol
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
@@ -32,7 +34,7 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
 
-# ConfiguraciÛn avanzada de logging
+# Configuraci√≥n avanzada de logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -45,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MetricsData:
-    """Estructura para almacenar mÈtricas de rendimiento"""
+    """Structure to store performance metrics"""
     start_time: float
     end_time: float = 0
     tokens_used: int = 0
@@ -57,13 +59,13 @@ class MetricsData:
 
     @property
     def duration(self) -> float:
-        """Calcula la duraciÛn en segundos"""
+        """Calculate duration in seconds"""
         if self.end_time:
             return self.end_time - self.start_time
         return time.time() - self.start_time
 
     def to_dict(self) -> Dict:
-        """Convierte las mÈtricas a diccionario"""
+        """Convert metrics to dictionary"""
         return {
             'duration_seconds': self.duration,
             'tokens_used': self.tokens_used,
@@ -72,7 +74,7 @@ class MetricsData:
         }
 
 def track_metrics(func):
-    """Decorador para trackear mÈtricas de rendimiento"""
+    """Decorador para trackear m√©tricas de rendimiento"""
     @wraps(func)
     async def wrapper(self, *args, **kwargs):
         metrics = MetricsData(start_time=time.time())
@@ -202,7 +204,7 @@ class ResearchManager:
         
         # Initialize Gemini API
         genai.configure(api_key=self.settings.google_api_key)
-        self.gemini_model = genai.GenerativeModel('gemini-1.5-pro')
+        self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
         self.query_cache: Set[str] = set()
         
         # Initialize repository
@@ -564,14 +566,14 @@ class ResearchManager:
         """Cleanup method to clear Gemini API caches when done."""
         pass
 
-# Uso b·sico con modo verbose
+# Uso b√°sico con modo verbose
 manager = ResearchManager(verbose=True)
 
-# Acceso a mÈtricas
+# Acceso a m√©tricas
 async def main():
     section = Section(id="test", name="Test Section", description="Test")
     try:
         result = await manager.research_section(section)
-        # Las mÈtricas se guardan autom·ticamente en la base de datos
+        # Las m√©tricas se guardan autom√°ticamente en la base de datos
     except Exception as e:
         logger.error("Research failed", exc_info=True)

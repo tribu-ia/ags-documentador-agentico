@@ -1,118 +1,103 @@
 import asyncio
-import datetime
+import logging
 from typing import Dict, List
-
 from fastapi import WebSocket
+from datetime import datetime
 
-from backend.report_type import BasicReport, DetailedReport
-from backend.chat import ChatAgentWithMemory
+from app.agents.researcher import ResearchManager
+from app.agents.writer import ReportWriter
+from app.utils.state import Section, ReportState
 
-from gpt_researcher.utils.enum import ReportType, Tone
-from multi_agents.main import run_research_task
-from gpt_researcher.actions import stream_output  # Import stream_output
-
+logger = logging.getLogger(__name__)
 
 class WebSocketManager:
-    """Manage websockets"""
+    """Gestiona las conexiones WebSocket y el proceso de investigación"""
 
     def __init__(self):
-        """Initialize the WebSocketManager class."""
         self.active_connections: List[WebSocket] = []
-        self.sender_tasks: Dict[WebSocket, asyncio.Task] = {}
-        self.message_queues: Dict[WebSocket, asyncio.Queue] = {}
-        self.chat_agent = None
-
-    async def start_sender(self, websocket: WebSocket):
-        """Start the sender task."""
-        queue = self.message_queues.get(websocket)
-        if not queue:
-            return
-
-        while True:
-            message = await queue.get()
-            if websocket in self.active_connections:
-                try:
-                    if message == "ping":
-                        await websocket.send_text("pong")
-                    else:
-                        await websocket.send_text(message)
-                except:
-                    break
-            else:
-                break
+        self.research_tasks: Dict[str, asyncio.Task] = {}
 
     async def connect(self, websocket: WebSocket):
-        """Connect a websocket."""
         await websocket.accept()
         self.active_connections.append(websocket)
-        self.message_queues[websocket] = asyncio.Queue()
-        self.sender_tasks[websocket] = asyncio.create_task(
-            self.start_sender(websocket))
+        logger.info("Nueva conexión WebSocket establecida")
 
     async def disconnect(self, websocket: WebSocket):
-        """Disconnect a websocket."""
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-            self.sender_tasks[websocket].cancel()
-            await self.message_queues[websocket].put(None)
-            del self.sender_tasks[websocket]
-            del self.message_queues[websocket]
+            logger.info("Conexión WebSocket cerrada")
 
-    async def start_streaming(self, task, report_type, report_source, source_urls, document_urls, tone, websocket, headers=None):
-        """Start streaming the output."""
-        tone = Tone[tone]
-        # add customized JSON config file path here
-        config_path = "default"
-        report = await run_agent(task, report_type, report_source, source_urls, document_urls, tone, websocket, headers = headers, config_path = config_path)
-        #Create new Chat Agent whenever a new report is written
-        self.chat_agent = ChatAgentWithMemory(report, config_path, headers)
-        return report
+    async def handle_research(self, websocket: WebSocket, data: dict):
+        """Maneja el proceso de investigación y escritura"""
+        try:
+            # Inicializar componentes
+            researcher = ResearchManager(verbose=True, websocket=websocket)
+            writer = ReportWriter(websocket=websocket)
 
-    async def chat(self, message, websocket):
-        """Chat with the agent based message diff"""
-        if self.chat_agent:
-            await self.chat_agent.chat(message, websocket)
-        else:
-            await websocket.send_json({"type": "chat", "content": "Knowledge empty, please run the research first to obtain knowledge"})
+            # Crear sección
+            section = Section(
+                id=data.get("section_id", str(datetime.now().timestamp())),
+                name=data.get("title", ""),
+                description=data.get("description", "")
+            )
 
-async def run_agent(task, report_type, report_source, source_urls, document_urls, tone: Tone, websocket, headers=None, config_path=""):
-    """Run the agent."""
-    start_time = datetime.datetime.now()
-    # Instead of running the agent directly run it through the different report type classes
-    if report_type == "multi_agents":
-        report = await run_research_task(query=task, websocket=websocket, stream_output=stream_output, tone=tone, headers=headers)
-        report = report.get("report", "")
-    elif report_type == ReportType.DetailedReport.value:
-        researcher = DetailedReport(
-            query=task,
-            report_type=report_type,
-            report_source=report_source,
-            source_urls=source_urls,
-            document_urls=document_urls,
-            tone=tone,
-            config_path=config_path,
-            websocket=websocket,
-            headers=headers
-        )
-        report = await researcher.run()
-    else:
-        researcher = BasicReport(
-            query=task,
-            report_type=report_type,
-            report_source=report_source,
-            source_urls=source_urls,
-            document_urls=document_urls,
-            tone=tone,
-            config_path=config_path,
-            websocket=websocket,
-            headers=headers
-        )
-        report = await researcher.run()
+            # Notificar inicio de investigación
+            await websocket.send_json({
+                "type": "status",
+                "data": {"message": "Iniciando proceso de investigación..."}
+            })
 
-    # measure time
-    end_time = datetime.datetime.now()
-    await websocket.send_json(
-        {"type": "logs", "output": f"\nTotal run time: {end_time - start_time}\n"}
-    )
+            # Realizar investigación
+            researched_section = await researcher.research_section(section)
 
-    return report
+            # Notificar inicio de escritura
+            await websocket.send_json({
+                "type": "status",
+                "data": {"message": "Iniciando proceso de escritura..."}
+            })
+
+            # Escribir reporte con streaming
+            async for content in writer.write_report({
+                "sections": [researched_section]
+            }):
+                await websocket.send_json({
+                    "type": "content_update",
+                    "data": content
+                })
+
+            # Notificar finalización
+            await websocket.send_json({
+                "type": "complete",
+                "data": {
+                    "message": "Proceso completado",
+                    "section_id": section.id
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error en investigación: {str(e)}", exc_info=True)
+            await websocket.send_json({
+                "type": "error",
+                "data": {"error": str(e)}
+            })
+
+    async def handle_message(self, websocket: WebSocket, data: dict):
+        """Router de mensajes WebSocket"""
+        try:
+            message_type = data.get("type")
+            
+            if message_type == "start_research":
+                await self.handle_research(websocket, data)
+            else:
+                logger.warning(f"Tipo de mensaje no soportado: {message_type}")
+                await websocket.send_json({
+                    "type": "error",
+                    "data": {"error": f"Tipo de mensaje no soportado: {message_type}"}
+                })
+
+        except Exception as e:
+            logger.error(f"Error procesando mensaje: {str(e)}", exc_info=True)
+            await websocket.send_json({
+                "type": "error",
+                "data": {"error": str(e)}
+            })

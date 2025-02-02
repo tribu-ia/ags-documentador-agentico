@@ -128,16 +128,10 @@ async def handle_start_command(websocket, data: str, manager):
 
     # Create logs handler with websocket and task
     logs_handler = CustomLogsHandler(websocket, task)
-    # Initialize log content with query
-    await logs_handler.send_json({
-        "query": task,
-        "sources": [],
-        "context": [],
-        "report": ""
-    })
-
+    
     sanitized_filename = sanitize_filename(f"task_{int(time.time())}_{task}")
 
+    # Usar el nuevo método de streaming
     report = await manager.start_streaming(
         task, 
         report_type, 
@@ -148,10 +142,12 @@ async def handle_start_command(websocket, data: str, manager):
         websocket,
         headers
     )
-    report = str(report)
+
+    # Generar archivos del reporte
     file_paths = await generate_report_files(report, sanitized_filename)
-    # Add JSON log path to file_paths
     file_paths["json"] = os.path.relpath(logs_handler.log_file)
+    
+    # Enviar rutas de archivos generados
     await send_file_paths(websocket, file_paths)
 
 

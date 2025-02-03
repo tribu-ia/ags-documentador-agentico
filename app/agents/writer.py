@@ -52,7 +52,8 @@ class ReportWriter:
         # Get primary LLM for report writing - using Claude for high-quality content generation
         self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
 
-    async def send_progress(self, message: str, data: Optional[Dict] = None):
+    async def send_progress(self, message: str, data: dict = None):
+        """Send progress updates through websocket"""
         if self.websocket:
             await self.websocket.send_json({
                 "type": "writing_progress",
@@ -63,37 +64,30 @@ class ReportWriter:
     async def write_section(self, section: Section, context: str = None) -> AsyncGenerator[str, None]:
         """Write a single section with streaming progress"""
         try:
-            await self.send_progress("section_start", {"section_name": section.name})
-
-            logger.debug(f"Writing section: {section.name}")
+            await self.send_progress("Starting section", {"section_name": section.name})
 
             system_instructions = SECTION_WRITER.format(
                 section_topic=section.description,
-                context=context if context else (section.content or "No content available yet.")
+                context=context if context else section.content
             )
 
-            # Stream the writing process
             content_buffer = []
             async for chunk in self.primary_llm.astream([
                 SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate a report section based on the provided sources.")
+                HumanMessage(content="Generate section content")
             ]):
                 content_buffer.append(chunk.content)
-                # Stream each chunk
                 await self.send_progress("content_chunk", {"content": chunk.content})
-                yield chunk.content
+                yield chunk.content  # Yield each chunk for streaming
 
-            final_content = "".join(content_buffer)
-            section.content = final_content
-
+            section.content = "".join(content_buffer)
             await self.send_progress("section_complete", {
                 "section_name": section.name,
-                "content": final_content
+                "content": section.content
             })
 
         except Exception as e:
-            logger.error(f"Error writing section {section.name}: {str(e)}")
-            await self.send_progress("error", {"error": str(e), "section": section.name})
+            await self.send_progress("error", {"error": str(e)})
             raise
 
     async def write_report(self, state: ReportState) -> AsyncGenerator[Dict, None]:

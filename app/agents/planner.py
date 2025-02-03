@@ -19,18 +19,28 @@ logger = logging.getLogger(__name__)
 class ReportPlanner:
     """Class responsible for planning and organizing report generation."""
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, websocket=None):
         """Initialize ReportPlanner with configuration settings."""
         self.settings = settings or get_settings()
+        self.websocket = websocket
+        
         # Initialize LLMManager with configuration
         llm_config = LLMConfig(
             temperature=0.0,
             streaming=True,
-            max_tokens=2000  # Adjust as needed
+            max_tokens=2000
         )
         self.llm_manager = LLMManager(llm_config)
-        # Get the primary LLM for report generation
         self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+
+    async def send_progress(self, message: str, data: dict = None):
+        """Send progress updates through websocket"""
+        if self.websocket:
+            await self.websocket.send_json({
+                "type": "planning_progress",
+                "message": message,
+                "data": data
+            })
 
     async def generate_search_queries(self, topic: str) -> Queries:
         """Generate initial search queries for the report topic.
@@ -102,41 +112,35 @@ class ReportPlanner:
         ])
 
     async def plan_report(self, state: ReportState) -> dict:
-        """Generate a dynamic report plan using LLM and web research.
+        """Generate a dynamic report plan using LLM and web research."""
+        try:
+            topic = state.topic  # Accedemos como atributo
+            await self.send_progress(f"Starting report planning for topic: {topic}")
 
-        Args:
-            state: Current report state containing the topic
+            # Generate search queries
+            queries_result = await self.generate_search_queries(topic)
+            query_list = [query.search_query for query in queries_result.queries]  # Extraer las queries
+            await self.send_progress("Generated initial search queries")
 
-        Returns:
-            Dictionary containing generated report sections
-        """
-        topic = state["topic"]
-        logger.debug(f"Starting report planning for topic: {topic}")
+            # Conduct research
+            source_str = await self.conduct_research(query_list)  # Pasar la lista de queries
+            await self.send_progress("Completed initial research")
 
-        # Generate search queries
-        queries_result = await self.generate_search_queries(topic)
-        query_list = [query.search_query for query in queries_result.queries]
+            # Generate sections
+            report_sections = await self.generate_sections(topic, source_str)
+            await self.send_progress("Generated report sections")
 
-        # Conduct research
-        source_str = await self.conduct_research(query_list)
+            return {"sections": report_sections.sections}
 
-        # Generate sections
-        report_sections = await self.generate_sections(topic, source_str)
-        logger.debug(f"Completed report planning for topic: {topic}")
-        return {"sections": report_sections.sections}
+        except Exception as e:
+            await self.send_progress("Error in planning", {"error": str(e)})
+            raise
 
     @staticmethod
     def initiate_section_writing(state: ReportState) -> list[Send]:
-        """Initialize parallel section writing for sections requiring research.
-
-        Args:
-            state: Current report state containing sections
-
-        Returns:
-            List of Send objects for parallel processing
-        """
+        """Initialize parallel section writing for sections requiring research."""
         return [
             Send("research", {"section": section})
-            for section in state["sections"]
+            for section in state.sections  # Acceder como atributo
             if section.research
         ]

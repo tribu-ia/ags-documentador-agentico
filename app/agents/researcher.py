@@ -204,30 +204,156 @@ class ResearchManager:
     ):
         """Initialize ResearchManager with configuration settings and repository."""
         self.settings = settings or get_settings()
-        self.max_retries = 3
-        self.min_wait = 1
-        self.max_wait = 10
-        self.verbose = verbose
         self.websocket = websocket
+        self.verbose = verbose
         
         # Initialize Gemini API
         genai.configure(api_key=self.settings.google_api_key)
         self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        self.query_cache: Set[str] = set()
         
         # Initialize repository
         self.repository = repository or SQLiteResearchRepository()
         
-        # Configure verbose logging
+        # Configure logging
         if verbose:
             logging.getLogger().setLevel(logging.DEBUG)
         else:
             logging.getLogger().setLevel(logging.INFO)
 
-    def debug_log(self, message: str):
-        """Utility method for debug logging"""
-        if self.verbose:
-            logger.debug(message)
+    async def send_progress(self, message: str, data: Optional[Dict] = None):
+        """Send progress updates through websocket"""
+        if self.websocket:
+            await self.websocket.send_json({
+                "type": "research_progress",
+                "message": message,
+                "data": data
+            })
+
+    async def generate_queries(self, state: SectionState) -> dict:
+        """Generate and validate search queries using multiple engines."""
+        try:
+            section = state.section  # Acceder como atributo
+            await self.send_progress(f"Generating queries for section: {section.name}")
+            
+            initial_queries = await self.generate_initial_queries(state)
+            
+            if not initial_queries:
+                await self.send_progress("No initial queries generated")
+                return {"search_queries": []}
+            
+            validated_queries = []
+            for query in initial_queries:
+                try:
+                    validation = await self.validate_query(query)
+                    if validation.overall_score >= 0.6:
+                        validated_queries.append({
+                            'search_query': query,
+                            'validation': validation
+                        })
+                        
+                except Exception as e:
+                    await self.send_progress("Query validation error", {"error": str(e)})
+                    continue
+            
+            await self.send_progress("Queries generated", {
+                "count": len(validated_queries)
+            })
+            
+            return {"search_queries": validated_queries}
+
+        except Exception as e:
+            await self.send_progress("Error generating queries", {"error": str(e)})
+            raise
+
+    async def search_web(self, state: SectionState) -> dict:
+        """Perform web searches based on generated queries."""
+        try:
+            await self.send_progress("Starting web search")
+            search_queries = state.search_queries  # Acceder como atributo
+
+            # Extract queries and perform searches
+            query_list = [query.search_query for query in search_queries]
+            search_docs = await tavily_search_async(
+                query_list,
+                self.settings.tavily_topic,
+                self.settings.tavily_days
+            )
+
+            # Format and deduplicate results
+            source_str = deduplicate_and_format_sources(
+                search_docs,
+                max_tokens_per_source=5000,
+                include_raw_content=True
+            )
+
+            await self.send_progress("Web search completed")
+            return {"source_str": source_str}
+
+        except Exception as e:
+            await self.send_progress("Error during web search", {"error": str(e)})
+            raise
+
+    async def write_section(self, state: SectionState) -> dict:
+        """Write a section based on research results."""
+        try:
+            section = state.section  # Acceder como atributo
+            source_str = state.source_str  # Acceder como atributo
+            
+            await self.send_progress(f"Writing section: {section.name}")
+
+            if len(source_str) > 25000:
+                logger.warning("Source material too long, truncating...")
+                source_str = source_str[:25000] + "... [truncated for length]"
+
+            prompt = f"""
+            Write a comprehensive section about: {section.name}
+            
+            Context and requirements:
+            - Topic description: {section.description}
+            - Use the following source material: {source_str}
+            
+            Guidelines:
+            - Be thorough but concise
+            - Include key facts and analysis
+            - Maintain a professional tone
+            - Organize information logically
+            - Cite sources where appropriate
+            
+            Maximum length: 2000 words.
+            Write the section content now.
+            """
+
+            try:
+                section_content = await self._call_gemini_with_retry(prompt)
+                if not section_content:
+                    raise ValueError("Empty response from Gemini")
+                
+                section.content = section_content
+                logger.debug(f"Completed writing section: {section.name}")
+                await self.send_progress("Section completed", {
+                    "section_name": section.name
+                })
+                return {"completed_sections": [section]}
+
+            except Exception as e:
+                logger.error(f"Error in first attempt, trying with reduced content: {str(e)}")
+                shorter_prompt = f"""
+                Write a brief section about: {section.name}
+                Topic description: {section.description}
+                Key points from sources: {source_str[:5000]}...
+                
+                Write a concise summary (max 500 words).
+                """
+                section_content = await self._call_gemini_with_retry(shorter_prompt)
+                section.content = section_content
+                await self.send_progress("Section completed", {
+                    "section_name": section.name
+                })
+                return {"completed_sections": [section]}
+
+        except Exception as e:
+            await self.send_progress("Error writing section", {"error": str(e)})
+            raise
 
     def _normalize_query(self, query: str) -> str:
         """Normalize a query by removing extra spaces and converting to lowercase."""
@@ -304,8 +430,8 @@ class ResearchManager:
         try:
             prompt = f"""
             Generate {self.settings.number_of_queries} specific and diverse search queries for researching:
-            Topic: {state['section'].name}
-            Context: {state['section'].description}
+            Topic: {state.section.name}
+            Context: {state.section.description}
 
             Requirements:
             - Each query should focus on a different aspect
@@ -332,156 +458,9 @@ class ResearchManager:
             logger.error(f"Error in generate_initial_queries after retries: {str(e)}")
             return []
 
-    async def generate_queries(self, state: SectionState) -> dict:
-        """Generate and validate search queries using multiple engines."""
-        try:
-            logger.debug(f"Generating queries for section: {state['section'].name}")
-            
-            initial_queries = await self.generate_initial_queries(state)
-            
-            if not initial_queries:
-                logger.warning("No initial queries generated after retries")
-                return {"search_queries": []}
-            
-            validated_queries = []
-            for query in initial_queries:
-                try:
-                    normalized_query = self._normalize_query(query)
-                    query_hash = self._get_query_hash(normalized_query)
-                    
-                    if query_hash in self.query_cache:
-                        continue
-                    
-                    validation = await self.validate_query(normalized_query)
-                    
-                    if validation.overall_score >= 0.6:
-                        validated_queries.append({
-                            'search_query': normalized_query,
-                            'validation': validation,
-                            'engines': self._select_search_engines(validation)
-                        })
-                        self.query_cache.add(query_hash)
-                        
-                    if len(validated_queries) >= self.settings.number_of_queries:
-                        break
-                        
-                except Exception as e:
-                    logger.warning(f"Error processing query '{query}' after retries: {str(e)}")
-                    continue
-            
-            return {"search_queries": validated_queries}
-
-        except Exception as e:
-            logger.error(f"Error generating queries after retries: {str(e)}")
-            return {"search_queries": []}
-
-    async def write_section(self, state: SectionState) -> dict:
-        """Write a section based on research results using Gemini."""
-        try:
-            logger.debug(f"Writing section: {state['section'].name}")
-            section = state["section"]
-            source_str = state["source_str"]
-
-            if len(source_str) > 25000:
-                logger.warning("Source material too long, truncating...")
-                source_str = source_str[:25000] + "... [truncated for length]"
-
-            prompt = f"""
-            Write a comprehensive section about: {section.name}
-            
-            Context and requirements:
-            - Topic description: {section.description}
-            - Use the following source material: {source_str}
-            
-            Guidelines:
-            - Be thorough but concise
-            - Include key facts and analysis
-            - Maintain a professional tone
-            - Organize information logically
-            - Cite sources where appropriate
-            
-            Maximum length: 2000 words.
-            Write the section content now.
-            """
-
-            try:
-                section_content = await self._call_gemini_with_retry(prompt)
-                if not section_content:
-                    raise ValueError("Empty response from Gemini")
-                
-                section.content = section_content
-                logger.debug(f"Completed writing section: {section.name}")
-                return {"completed_sections": [section]}
-
-            except Exception as e:
-                logger.error(f"Error in first attempt, trying with reduced content: {str(e)}")
-                shorter_prompt = f"""
-                Write a brief section about: {section.name}
-                Topic description: {section.description}
-                Key points from sources: {source_str[:5000]}...
-                
-                Write a concise summary (max 500 words).
-                """
-                section_content = await self._call_gemini_with_retry(shorter_prompt)
-                section.content = section_content
-                return {"completed_sections": [section]}
-
-        except Exception as e:
-            logger.error(f"Error writing section: {str(e)}")
-            section.content = f"Error generating content for section: {section.name}. Please try again later."
-            return {"completed_sections": [section]}
-
-    def _select_search_engines(self, validation: QueryValidation) -> List[SearchEngine]:
-        """Select appropriate search engines based on query validation."""
-        engines = []
-        
-        # Always include Tavily for baseline results
-        engines.append(SearchEngine.TAVILY)
-        
-        # Add Gemini for highly specific queries
-        if validation.specificity >= 0.8:
-            engines.append(SearchEngine.GEMINI)
-        
-        # Add Deep Research for complex queries needing detailed analysis
-        if validation.relevance >= 0.8 and validation.clarity >= 0.7:
-            engines.append(SearchEngine.DEEP_RESEARCH)
-        
-        return engines
-
-    async def _update_state(self, section: Section, status: ResearchStatus, **kwargs):
-        """Update and save research state"""
-        try:
-            current_state = await self.repository.load_state(section.id) or {}
-            
-            # Update state with new information
-            new_state = {
-                "section_id": section.id,
-                "status": status,
-                "last_updated": datetime.utcnow(),
-                **current_state,
-                **kwargs
-            }
-            
-            await self.repository.save_state(section.id, new_state)
-            
-        except Exception as e:
-            error_msg = f"Error updating state: {str(e)}"
-            logger.error(error_msg)
-            await self.repository.log_error(section.id, error_msg)
-
-    async def send_progress(self, message: str, data: Optional[Dict] = None):
-        """Send progress updates through websocket if available"""
-        if self.websocket:
-            await self.websocket.send_json({
-                "type": "progress",
-                "message": message,
-                "data": data
-            })
-
     async def research_section(self, section: Section) -> Section:
         """Research a section with progress updates"""
         try:
-            # Notificar inicio
             await self.send_progress("Iniciando investigación de la sección")
 
             # Recuperar estado si existe
@@ -490,26 +469,52 @@ class ResearchManager:
                 await self.send_progress("Recuperando investigación previa")
                 return recovered_section
 
+            # Crear estado inicial con la sección
+            initial_state = SectionState(
+                section=section,
+                search_queries=[],
+                source_str="",
+                report_sections_from_research="",
+                completed_sections=[]
+            )
+
             # Generar queries de búsqueda
             await self.send_progress("Generando consultas de búsqueda")
-            search_queries = await self.generate_queries(SectionState(section=section))
+            queries_result = await self.generate_queries(initial_state)
+            
+            # Actualizar estado con queries
+            search_state = SectionState(
+                section=section,
+                search_queries=queries_result["search_queries"],
+                source_str="",
+                report_sections_from_research="",
+                completed_sections=[]
+            )
             
             # Realizar búsqueda web
             await self.send_progress("Realizando búsqueda web")
-            search_results = await self.search_web({"search_queries": search_queries["search_queries"]})
+            search_results = await self.search_web(search_state)
             
-            # Procesar resultados
+            # Procesar resultados y escribir sección
             await self.send_progress("Procesando resultados")
-            section.content = search_results.get("source_str", "")
+            write_state = SectionState(
+                section=section,
+                search_queries=queries_result["search_queries"],
+                source_str=search_results["source_str"],
+                report_sections_from_research="",
+                completed_sections=[]
+            )
+            
+            result = await self.write_section(write_state)
             
             # Guardar estado
             await self.repository.save_state(section.id, {
                 "status": ResearchStatus.COMPLETED,
-                "content": section.content
+                "content": result["completed_sections"][0].content
             })
 
             await self.send_progress("Investigación completada")
-            return section
+            return result["completed_sections"][0]
 
         except Exception as e:
             logger.error(f"Error en investigación: {str(e)}")
@@ -538,41 +543,6 @@ class ResearchManager:
         except Exception as e:
             logger.error(f"Error recovering state for section {section.id}: {str(e)}")
             return None
-
-    async def search_web(self, state: SectionState) -> dict:
-        """Perform web searches based on generated queries.
-
-        Args:
-            state: Current section state containing search queries
-
-        Returns:
-            dict: Dictionary containing formatted search results
-        """
-        try:
-            logger.debug("Starting web search")
-            search_queries = state["search_queries"]
-
-            # Extract queries and perform searches
-            query_list = [query.search_query for query in search_queries]
-            search_docs = await tavily_search_async(
-                query_list,
-                self.settings.tavily_topic,
-                self.settings.tavily_days
-            )
-
-            # Format and deduplicate results
-            source_str = deduplicate_and_format_sources(
-                search_docs,
-                max_tokens_per_source=5000,
-                include_raw_content=True
-            )
-
-            logger.debug("Web search completed")
-            return {"source_str": source_str}
-
-        except Exception as e:
-            logger.error(f"Error during web search: {str(e)}")
-            raise
 
     def cleanup(self):
         """Cleanup method to clear Gemini API caches when done."""

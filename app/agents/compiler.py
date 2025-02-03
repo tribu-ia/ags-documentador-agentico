@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 class ReportCompiler:
     """Class responsible for compiling and formatting the final report."""
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, websocket=None):
         """Initialize ReportCompiler with configuration settings.
 
         Args:
             settings: Optional application settings. If None, will load default settings.
+            websocket: Optional websocket for streaming updates.
         """
         self.settings = settings or get_settings()
+        self.websocket = websocket
 
         # Initialize LLM manager with compilation-specific configuration
         llm_config = LLMConfig(
@@ -30,8 +32,6 @@ class ReportCompiler:
             max_tokens=4000  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
-
-        # Get primary LLM for report compilation
         self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
 
     def format_sections(self, sections: List[Section]) -> str:
@@ -59,18 +59,20 @@ class ReportCompiler:
                             """
         return formatted_str
 
-    def gather_completed_sections(self, state: ReportState) -> dict:
-        """Gather and format completed sections for context.
+    async def send_progress(self, message: str, data: dict = None):
+        """Send progress updates through websocket"""
+        if self.websocket:
+            await self.websocket.send_json({
+                "type": "compiler_progress",
+                "message": message,
+                "data": data
+            })
 
-        Args:
-            state: Current report state containing completed sections
-
-        Returns:
-            dict: Dictionary containing formatted sections
-        """
+    async def gather_completed_sections(self, state: ReportState) -> dict:
+        """Gather and format completed sections for context."""
         try:
-            logger.debug("Gathering completed sections")
-            completed_sections = state["completed_sections"]
+            await self.send_progress("Gathering completed sections")
+            completed_sections = state.completed_sections  # Acceder como atributo
             formatted_sections = self.format_sections(completed_sections)
 
             return {
@@ -78,43 +80,33 @@ class ReportCompiler:
             }
 
         except Exception as e:
-            logger.error(f"Error gathering completed sections: {str(e)}")
+            await self.send_progress("Error gathering sections", {"error": str(e)})
             raise
 
     async def write_final_sections(self, state: SectionState) -> dict:
-        """Write final sections using completed research as context.
-
-        Args:
-            state: Current section state with research context
-
-        Returns:
-            dict: Dictionary containing completed sections
-        """
+        """Write final sections using completed research as context."""
         try:
-            logger.debug(f"Writing final section: {state['section'].name}")
-            section = state["section"]
-            completed_report_sections = state["report_sections_from_research"]
+            section = state.section  # Acceder como atributo
+            await self.send_progress(f"Writing final section: {section.name}")
 
             system_instructions = FINAL_SECTION_WRITER.format(
                 section_title=section.name,
                 section_topic=section.description,
-                context=completed_report_sections
+                context=state.report_sections_from_research  # Acceder como atributo
             )
 
-            # Generate section content
             section_content = await self.primary_llm.ainvoke([
                 SystemMessage(content=system_instructions),
                 HumanMessage(content="Generate a report section based on the provided sources.")
             ])
 
-            # Update section
             section.content = section_content.content
-            logger.debug(f"Completed writing final section: {section.name}")
+            await self.send_progress(f"Completed writing final section: {section.name}")
 
             return {"completed_sections": [section]}
 
         except Exception as e:
-            logger.error(f"Error writing final section: {str(e)}")
+            await self.send_progress("Error writing section", {"error": str(e)})
             raise
 
     def compile_sections(self, state: ReportState) -> dict:

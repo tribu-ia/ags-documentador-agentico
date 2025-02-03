@@ -38,10 +38,12 @@ class Queries(BaseModel):
     )
 
 
-class ReportState(BaseModel):
-    """Estado del reporte completo"""
-    sections: List[Section] = []
-    report_sections_from_research: List[Dict] = []
+class ReportState(TypedDict):
+    topic: str
+    sections: list[Section]
+    final_report: str
+    completed_sections: Annotated[list, operator.add]  # Send() API key
+    report_sections_from_research: str  # String of any completed sections from research to write final sections
 
 
 class ResearchState(BaseModel):

@@ -1,10 +1,12 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Annotated
+from typing import List, Optional, Annotated, Dict
 from typing_extensions import TypedDict
 import operator
 
 
 class Section(BaseModel):
+    """Modelo para una sección de investigación"""
+    id: str
     name: str = Field(
         description="Name for this section of the report.",
     )
@@ -17,6 +19,7 @@ class Section(BaseModel):
     content: str = Field(
         description="The content of the section."
     )
+    status: str = "not_started"
 
 
 class Sections(BaseModel):
@@ -35,12 +38,10 @@ class Queries(BaseModel):
     )
 
 
-class ReportState(TypedDict):
-    topic: str
-    sections: list[Section]
-    final_report: str
-    completed_sections: Annotated[list, operator.add]  # Send() API key
-    report_sections_from_research: str  # String of any completed sections from research to write final sections
+class ReportState(BaseModel):
+    """Estado del reporte completo"""
+    sections: List[Section] = []
+    report_sections_from_research: List[Dict] = []
 
 
 class ResearchState(BaseModel):

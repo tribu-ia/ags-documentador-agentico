@@ -33,20 +33,29 @@ class WebSocketManager:
             researcher = ResearchManager(verbose=True, websocket=websocket)
             writer = ReportWriter(websocket=websocket)
 
-            # Crear sección
+            # Adaptar datos del websocket al formato esperado por Section
             section = Section(
-                id=data.get("section_id", str(datetime.now().timestamp())),
+                id=data.get("section_id", f"section_{datetime.now().timestamp()}"),  # Asegurar que siempre hay un ID
                 name=data.get("title", ""),
-                description=data.get("description", "")
+                description=data.get("description", ""),
+                research=True,  # Siempre True ya que estamos investigando
+                content="",  # Inicialmente vacío
+                status="not_started"
             )
+
+            logger.info(f"Iniciando investigación para sección: {section.name}")
 
             # Realizar investigación
             researched_section = await researcher.research_section(section)
 
+            # Crear estado del reporte para el writer
+            report_state = ReportState(
+                sections=[researched_section],
+                report_sections_from_research=[]  # Lista vacía inicial
+            )
+
             # Escribir reporte
-            async for content in writer.write_report({
-                "sections": [researched_section]
-            }):
+            async for content in writer.write_report(report_state):
                 await websocket.send_json({
                     "type": "content_update",
                     "data": content
@@ -57,7 +66,7 @@ class WebSocketManager:
                 "type": "complete",
                 "data": {
                     "message": "Proceso completado",
-                    "section_id": section.id
+                    "section": researched_section.dict()
                 }
             })
 

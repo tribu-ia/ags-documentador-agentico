@@ -99,13 +99,14 @@ class ReportWriter:
     async def write_report(self, state: ReportState) -> AsyncGenerator[Dict, None]:
         """Process and write all sections with streaming updates"""
         try:
-            await self.send_progress("report_start", {"total_sections": len(state["sections"])})
+            await self.send_progress("report_start", {
+                "total_sections": len(state.sections)
+            })
 
             logger.debug("Starting report writing process")
-            sections = state["sections"]
             final_content = []
 
-            for section in sections:
+            for section in state.sections:
                 async for content in self.write_section(section):
                     yield {
                         "section": section.name,
@@ -114,7 +115,9 @@ class ReportWriter:
                 final_content.append(section.content)
 
             logger.debug("Completed writing all sections")
-            await self.send_progress("report_complete", {"completed_sections": final_content})
+            await self.send_progress("report_complete", {
+                "completed_sections": final_content
+            })
 
         except Exception as e:
             logger.error(f"Error during report writing: {str(e)}")
@@ -136,10 +139,10 @@ class ReportWriter:
                 "write_final_sections",
                 {
                     "section": section,
-                    "report_sections_from_research": state["report_sections_from_research"]
+                    "report_sections_from_research": state.report_sections_from_research
                 }
             )
-            for section in state["sections"]
+            for section in state.sections
             if not section.research
         ]
 

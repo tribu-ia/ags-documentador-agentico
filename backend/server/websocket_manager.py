@@ -52,13 +52,15 @@ class WebSocketManager:
             
             # Ejecutar el grafo
             chain = graph.compile()
-            result = await chain.ainvoke(state)
+            await chain.ainvoke(state)
 
-            # Notificar finalización
+            # Enviar un mensaje simple de finalización
             await websocket.send_json({
-                "type": "complete",
+                "type": "research_complete",
+                "message": "Research completed successfully",
                 "data": {
-                    "report": result
+                    "title": title,
+                    "status": "completed"
                 }
             })
 

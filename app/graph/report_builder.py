@@ -23,6 +23,17 @@ class ReportGraphBuilder(GraphBuilder):
         self.research_manager = ResearchManager(websocket=websocket)
         self.compiler = ReportCompiler(websocket=websocket)
 
+    def build(self) -> StateGraph:
+        """Construye y retorna el grafo de estados"""
+        # Inicializar el grafo
+        self.init_graph()
+        
+        # Agregar nodos y edges
+        self.add_nodes()
+        self.add_edges()
+        
+        return self.graph
+
     def init_graph(self) -> None:
         self.graph = StateGraph(ReportState)
         # Inicializa y compila el grafo de investigación
@@ -38,17 +49,24 @@ class ReportGraphBuilder(GraphBuilder):
         self.graph.add_node("compile_final_report", self.compiler.compile_final_report)
 
     def add_edges(self) -> None:
+        # 1. Plan -> Research
         self.graph.add_edge(START, "plan")
         self.graph.add_conditional_edges(
             "plan",
             ReportPlanner.initiate_section_writing,
             ["research"]
         )
+
+        # 2. Research -> Gather
         self.graph.add_edge("research", "gather_completed_sections")
+        
+        # 3. Gather -> Write Final
         self.graph.add_conditional_edges(
             "gather_completed_sections",
             self.writer.initiate_final_section_writing,
             ["write_final_sections"]
         )
+
+        # 4. Write -> Compile
         self.graph.add_edge("write_final_sections", "compile_final_report")
         self.graph.add_edge("compile_final_report", END)

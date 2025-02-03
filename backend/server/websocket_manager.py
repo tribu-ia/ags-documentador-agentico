@@ -35,11 +35,15 @@ class WebSocketManager:
             # Construir el topic combinando título y descripción
             topic = f"Research task: {title}\nContext: {description}"
 
-            # Crear estado inicial
-            state = ReportState(
-                topic=topic,  # Aquí usamos el topic construido
-                websocket=websocket
-            )
+            # Crear estado inicial completo
+            state = {
+                "topic": topic,
+                "sections": [],
+                "final_report": "",
+                "completed_sections": [],
+                "report_sections_from_research": "",  # Inicializar vacío
+                "websocket": websocket
+            }
 
             logger.info(f"Iniciando investigación para: {title}")
             

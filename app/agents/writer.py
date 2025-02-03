@@ -90,17 +90,17 @@ class ReportWriter:
             await self.send_progress("error", {"error": str(e)})
             raise
 
-    async def write_report(self, state: ReportState) -> AsyncGenerator[Dict, None]:
+    async def write_report(self, state: dict) -> AsyncGenerator[Dict, None]:
         """Process and write all sections with streaming updates"""
         try:
             await self.send_progress("report_start", {
-                "total_sections": len(state.sections)
+                "total_sections": len(state["sections"])
             })
 
             logger.debug("Starting report writing process")
             final_content = []
 
-            for section in state.sections:
+            for section in state["sections"]:
                 async for content in self.write_section(section):
                     yield {
                         "section": section.name,
@@ -118,27 +118,24 @@ class ReportWriter:
             await self.send_progress("error", {"error": str(e)})
             raise
 
-    @staticmethod
-    def initiate_final_section_writing(state: ReportState) -> list[Send]:
-        """Initialize parallel writing for sections that don't require research.
-
-        Args:
-            state: Current report state containing sections
-
-        Returns:
-            list[Send]: List of Send objects for parallel processing
-        """
-        return [
-            Send(
-                "write_final_sections",
-                {
+    async def initiate_final_section_writing(self, state: dict) -> list[Send]:
+        """Initialize parallel section writing for final sections."""
+        try:
+            await self.send_progress("Initiating final section writing")
+            research_context = state.get("report_sections_from_research", "")
+            
+            return [
+                Send("write_final_sections", {
+                    **state,  # Propagar estado completo
                     "section": section,
-                    "report_sections_from_research": state.report_sections_from_research
-                }
-            )
-            for section in state.sections
-            if not section.research
-        ]
+                    "report_sections_from_research": research_context
+                })
+                for section in state["sections"]
+                if not section.research
+            ]
+        except Exception as e:
+            await self.send_progress("Error initiating final sections", {"error": str(e)})
+            raise
 
     def cleanup(self):
         """Cleanup method to clear LLM caches when done."""

@@ -68,14 +68,16 @@ class ReportCompiler:
                 "data": data
             })
 
-    async def gather_completed_sections(self, state: ReportState) -> dict:
+    async def gather_completed_sections(self, state: dict) -> dict:
         """Gather and format completed sections for context."""
         try:
             await self.send_progress("Gathering completed sections")
-            completed_sections = state.completed_sections  # Acceder como atributo
+            completed_sections = state.get("completed_sections", [])
             formatted_sections = self.format_sections(completed_sections)
 
+            # Retornar estado completo actualizado
             return {
+                **state,  # Mantener estado existente
                 "report_sections_from_research": formatted_sections
             }
 
@@ -83,16 +85,18 @@ class ReportCompiler:
             await self.send_progress("Error gathering sections", {"error": str(e)})
             raise
 
-    async def write_final_sections(self, state: SectionState) -> dict:
+    async def write_final_sections(self, state: dict) -> dict:
         """Write final sections using completed research as context."""
         try:
-            section = state.section  # Acceder como atributo
+            section = state["section"]
+            context = state.get("report_sections_from_research", "")  # Usar get con valor por defecto
+            
             await self.send_progress(f"Writing final section: {section.name}")
 
             system_instructions = FINAL_SECTION_WRITER.format(
                 section_title=section.name,
                 section_topic=section.description,
-                context=state.report_sections_from_research  # Acceder como atributo
+                context=context
             )
 
             section_content = await self.primary_llm.ainvoke([
@@ -101,29 +105,25 @@ class ReportCompiler:
             ])
 
             section.content = section_content.content
-            await self.send_progress(f"Completed writing final section: {section.name}")
-
-            return {"completed_sections": [section]}
+            
+            # Retornar estado completo actualizado
+            return {
+                **state,  # Mantener estado existente
+                "completed_sections": state.get("completed_sections", []) + [section]
+            }
 
         except Exception as e:
             await self.send_progress("Error writing section", {"error": str(e)})
             raise
 
-    def compile_sections(self, state: ReportState) -> dict:
-        """Compile all sections into a unified structure.
-
-        Args:
-            state: Current report state containing all sections
-
-        Returns:
-            dict: Dictionary containing compiled sections
-        """
+    def compile_sections(self, state: dict) -> dict:
+        """Compile all sections into a unified structure."""
         try:
             logger.debug("Compiling sections")
-            sections = state["sections"]
+            sections = state["sections"]  # Acceder como diccionario
             completed_sections = {
                 s.name: s.content
-                for s in state["completed_sections"]
+                for s in state["completed_sections"]  # Acceder como diccionario
             }
 
             # Update sections while maintaining order
@@ -139,15 +139,8 @@ class ReportCompiler:
             logger.error(f"Error compiling sections: {str(e)}")
             raise
 
-    async def compile_final_report(self, state: ReportState) -> dict:
-        """Generate the final formatted report.
-
-        Args:
-            state: Current report state with all sections
-
-        Returns:
-            dict: Dictionary containing the final formatted report
-        """
+    async def compile_final_report(self, state: dict) -> dict:
+        """Generate the final formatted report."""
         try:
             logger.debug("Generating final report")
 

@@ -27,20 +27,24 @@ class WebSocketManager:
     async def handle_research(self, websocket: WebSocket, data: dict):
         """Maneja el proceso de investigación usando el grafo de LangGraph"""
         try:
-            topic = data.get("title", "")
-            if not topic:
+            title = data.get("title", "")
+            description = data.get("description", "")
+            if not title:
                 raise ValueError("El campo 'title' es requerido")
 
-            # Obtener el grafo con websocket configurado
-            graph = get_report_graph(websocket=websocket)
-            
+            # Construir el topic combinando título y descripción
+            topic = f"Research task: {title}\nContext: {description}"
+
             # Crear estado inicial
             state = ReportState(
-                topic=topic,
+                topic=topic,  # Aquí usamos el topic construido
                 websocket=websocket
             )
 
-            logger.info(f"Iniciando investigación para: {topic}")
+            logger.info(f"Iniciando investigación para: {title}")
+            
+            # Obtener el grafo con websocket configurado
+            graph = get_report_graph(websocket=websocket)
             
             # Ejecutar el grafo
             chain = graph.compile()

@@ -19,7 +19,6 @@ class Section(BaseModel):
     content: str = Field(
         description="The content of the section."
     )
-    status: str = "not_started"
 
 
 class Sections(BaseModel):
@@ -44,6 +43,7 @@ class ReportState(TypedDict):
     final_report: str
     completed_sections: Annotated[list, operator.add]  # Send() API key
     report_sections_from_research: str  # String of any completed sections from research to write final sections
+    websocket: Optional[object]  # Agregamos websocket manteniendo la estructura TypedDict
 
 
 class ResearchState(BaseModel):

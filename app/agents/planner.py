@@ -85,7 +85,6 @@ class ReportPlanner:
             max_tokens_per_source=1000,
             include_raw_content=False
         )
-
     async def generate_sections(self, topic: str, source_str: str) -> Sections:
         """Generate report sections based on research results.
 
@@ -112,35 +111,41 @@ class ReportPlanner:
         ])
 
     async def plan_report(self, state: ReportState) -> dict:
-        """Generate a dynamic report plan using LLM and web research."""
-        try:
-            topic = state.topic  # Accedemos como atributo
-            await self.send_progress(f"Starting report planning for topic: {topic}")
+        """Generate a dynamic report plan using LLM and web research.
 
-            # Generate search queries
-            queries_result = await self.generate_search_queries(topic)
-            query_list = [query.search_query for query in queries_result.queries]  # Extraer las queries
-            await self.send_progress("Generated initial search queries")
+        Args:
+            state: Current report state containing the topic
 
-            # Conduct research
-            source_str = await self.conduct_research(query_list)  # Pasar la lista de queries
-            await self.send_progress("Completed initial research")
+        Returns:
+            Dictionary containing generated report sections
+        """
+        topic = state["topic"]
+        logger.debug(f"Starting report planning for topic: {topic}")
 
-            # Generate sections
-            report_sections = await self.generate_sections(topic, source_str)
-            await self.send_progress("Generated report sections")
+        # Generate search queries
+        queries_result = await self.generate_search_queries(topic)
+        query_list = [query.search_query for query in queries_result.queries]
 
-            return {"sections": report_sections.sections}
+        # Conduct research
+        source_str = await self.conduct_research(query_list)
 
-        except Exception as e:
-            await self.send_progress("Error in planning", {"error": str(e)})
-            raise
+        # Generate sections
+        report_sections = await self.generate_sections(topic, source_str)
+        logger.debug(f"Completed report planning for topic: {topic}")
+        return {"sections": report_sections.sections}
 
     @staticmethod
     def initiate_section_writing(state: ReportState) -> list[Send]:
-        """Initialize parallel section writing for sections requiring research."""
+        """Initialize parallel section writing for sections requiring research.
+
+        Args:
+            state: Current report state containing sections
+
+        Returns:
+            List of Send objects for parallel processing
+        """
         return [
             Send("research", {"section": section})
-            for section in state.sections  # Acceder como atributo
+            for section in state["sections"]
             if section.research
         ]

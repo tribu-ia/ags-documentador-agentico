@@ -126,9 +126,9 @@ class ReportWriter:
             
             return [
                 Send("write_final_sections", {
-                    **state,  # Propagar estado completo
                     "section": section,
-                    "report_sections_from_research": research_context
+                    "report_sections_from_research": research_context,
+                    "completed_sections": state.get("completed_sections", [])  # Solo los campos necesarios
                 })
                 for section in state["sections"]
                 if not section.research

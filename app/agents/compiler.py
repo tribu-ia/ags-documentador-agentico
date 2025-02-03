@@ -89,7 +89,7 @@ class ReportCompiler:
         """Write final sections using completed research as context."""
         try:
             section = state["section"]
-            context = state.get("report_sections_from_research", "")  # Usar get con valor por defecto
+            context = state.get("report_sections_from_research", "")
             
             await self.send_progress(f"Writing final section: {section.name}")
 
@@ -106,9 +106,8 @@ class ReportCompiler:
 
             section.content = section_content.content
             
-            # Retornar estado completo actualizado
+            # Solo retornar los campos que necesitamos actualizar
             return {
-                **state,  # Mantener estado existente
                 "completed_sections": state.get("completed_sections", []) + [section]
             }
 

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,8 +12,23 @@ from backend.server.websocket_manager import WebSocketManager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Crear la aplicación FastAPI
-app = FastAPI(title="Research API")
+# Crear instancia del WebSocket Manager
+websocket_manager = WebSocketManager()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan manager for FastAPI application"""
+    # Startup
+    logger.info("Aplicación iniciando...")
+    yield
+    # Shutdown
+    logger.info("Aplicación finalizando...")
+
+# Crear la aplicación FastAPI con lifespan
+app = FastAPI(
+    title="Research API",
+    lifespan=lifespan
+)
 
 # Configurar CORS
 app.add_middleware(
@@ -22,13 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Crear instancia del WebSocket Manager
-websocket_manager = WebSocketManager()
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Aplicación iniciada")
 
 @app.get("/")
 async def root():
@@ -61,4 +70,3 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in websocket_manager.active_connections:
             await websocket_manager.disconnect(websocket)
 
-# NO ejecutes uvicorn aquí directamente

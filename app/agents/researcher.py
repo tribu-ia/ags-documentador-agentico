@@ -2,12 +2,13 @@
 
 from typing import List, Dict, Set, Optional, Protocol
 import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
 import hashlib
 import re
 from dataclasses import dataclass, asdict
 from enum import Enum
 import asyncio
+
+from starlette.websockets import WebSocket
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -194,13 +195,20 @@ class SQLiteResearchRepository(ResearchRepository):
             logger.error(f"Error saving metrics: {str(e)}")
 
 class ResearchManager:
-    def __init__(self, settings=None, repository: Optional[ResearchRepository] = None, verbose: bool = False):
+    def __init__(
+        self, 
+        settings=None, 
+        repository: Optional[ResearchRepository] = None, 
+        verbose: bool = False,
+        websocket: Optional[WebSocket] = None
+    ):
         """Initialize ResearchManager with configuration settings and repository."""
         self.settings = settings or get_settings()
         self.max_retries = 3
         self.min_wait = 1
         self.max_wait = 10
         self.verbose = verbose
+        self.websocket = websocket
         
         # Initialize Gemini API
         genai.configure(api_key=self.settings.google_api_key)
@@ -461,47 +469,51 @@ class ResearchManager:
             logger.error(error_msg)
             await self.repository.log_error(section.id, error_msg)
 
-    @track_metrics
-    async def research_section(self, section: Section) -> Section:
-        """Perform complete research process for a single section with state management."""
-        try:
-            logger.info(f"Starting research for section: {section.name}")
-            start_time = time.time()
-            
-            # Initialize or recover state
-            state = await self.repository.load_state(section.id)
-            if state and state["status"] == ResearchStatus.COMPLETED:
-                logger.info(f"Section {section.id} already completed, loading from state")
-                section.content = state["content"]
-                return section
+    async def send_progress(self, message: str, data: Optional[Dict] = None):
+        """Send progress updates through websocket if available"""
+        if self.websocket:
+            await self.websocket.send_json({
+                "type": "progress",
+                "message": message,
+                "data": data
+            })
 
-            # Process steps with detailed logging
-            self.debug_log("Generating queries...")
-            await self._update_state(section, ResearchStatus.GENERATING_QUERIES)
-            section_state = SectionState(section=section)
+    async def research_section(self, section: Section) -> Section:
+        """Research a section with progress updates"""
+        try:
+            # Notificar inicio
+            await self.send_progress("Iniciando investigación de la sección")
+
+            # Recuperar estado si existe
+            recovered_section = await self.recover_state(section)
+            if recovered_section:
+                await self.send_progress("Recuperando investigación previa")
+                return recovered_section
+
+            # Generar queries de búsqueda
+            await self.send_progress("Generando consultas de búsqueda")
+            search_queries = await self.generate_queries(SectionState(section=section))
             
-            queries_result = await self.generate_queries(section_state)
-            logger.info(f"Generated {len(queries_result['search_queries'])} queries")
+            # Realizar búsqueda web
+            await self.send_progress("Realizando búsqueda web")
+            search_results = await self.search_web({"search_queries": search_queries["search_queries"]})
             
-            self.debug_log("Performing web search...")
-            await self._update_state(section, ResearchStatus.SEARCHING)
-            search_result = await self.search_web(section_state)
+            # Procesar resultados
+            await self.send_progress("Procesando resultados")
+            section.content = search_results.get("source_str", "")
             
-            self.debug_log("Writing section content...")
-            await self._update_state(section, ResearchStatus.WRITING)
-            write_result = await self.write_section(section_state)
-            
-            duration = time.time() - start_time
-            logger.info(f"Research completed in {duration:.2f} seconds")
-            
-            return write_result["completed_sections"][0]
-            
+            # Guardar estado
+            await self.repository.save_state(section.id, {
+                "status": ResearchStatus.COMPLETED,
+                "content": section.content
+            })
+
+            await self.send_progress("Investigación completada")
+            return section
+
         except Exception as e:
-            error_msg = f"Error researching section {section.id}: {str(e)}"
-            logger.error(error_msg)
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            await self._update_state(section, ResearchStatus.FAILED)
-            await self.repository.log_error(section.id, error_msg)
+            logger.error(f"Error en investigación: {str(e)}")
+            await self.send_progress("Error en investigación", {"error": str(e)})
             raise
 
     async def recover_state(self, section: Section) -> Optional[Section]:

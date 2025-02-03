@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, List
+from typing import Dict, List, Any
 from fastapi import WebSocket
 from datetime import datetime
 
@@ -15,7 +15,6 @@ class WebSocketManager:
 
     def __init__(self):
         self.active_connections: List[WebSocket] = []
-        self.research_tasks: Dict[str, asyncio.Task] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -30,7 +29,7 @@ class WebSocketManager:
     async def handle_research(self, websocket: WebSocket, data: dict):
         """Maneja el proceso de investigación y escritura"""
         try:
-            # Inicializar componentes
+            # Inicializar componentes con websocket
             researcher = ResearchManager(verbose=True, websocket=websocket)
             writer = ReportWriter(websocket=websocket)
 
@@ -41,22 +40,10 @@ class WebSocketManager:
                 description=data.get("description", "")
             )
 
-            # Notificar inicio de investigación
-            await websocket.send_json({
-                "type": "status",
-                "data": {"message": "Iniciando proceso de investigación..."}
-            })
-
             # Realizar investigación
             researched_section = await researcher.research_section(section)
 
-            # Notificar inicio de escritura
-            await websocket.send_json({
-                "type": "status",
-                "data": {"message": "Iniciando proceso de escritura..."}
-            })
-
-            # Escribir reporte con streaming
+            # Escribir reporte
             async for content in writer.write_report({
                 "sections": [researched_section]
             }):

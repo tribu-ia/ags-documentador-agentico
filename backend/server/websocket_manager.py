@@ -47,14 +47,28 @@ class WebSocketManager:
 
             logger.info(f"Iniciando investigación para: {title}")
             
-            # Obtener el grafo con websocket configurado
-            graph = get_report_graph(websocket=websocket)
-            
-            # Ejecutar el grafo
-            chain = graph.compile()
-            await chain.ainvoke(state)
+            # Enviar mensaje de inicio
+            await websocket.send_json({
+                "type": "research_start",
+                "message": "Starting research process",
+                "data": {
+                    "title": title,
+                    "status": "started"
+                }
+            })
 
-            # Enviar un mensaje simple de finalización
+            # Configurar el streaming
+            async def handle_stream(message):
+                if isinstance(message, dict) and "type" in message:
+                    await websocket.send_json(message)
+
+            # Ejecutar el grafo con streaming
+            graph = get_report_graph(websocket=websocket)
+            chain = graph.compile()
+            async for chunk in chain.astream(state):  # Usar astream en lugar de ainvoke
+                await handle_stream(chunk)
+
+            # Mensaje final
             await websocket.send_json({
                 "type": "research_complete",
                 "message": "Research completed successfully",

@@ -141,29 +141,53 @@ class ReportCompiler:
     async def compile_final_report(self, state: dict) -> dict:
         """Generate the final formatted report."""
         try:
-            logger.debug("Generating final report")
+            logger.debug("Starting final report compilation")
+            await self.send_progress("Compiling final report")
 
             # First compile all sections
             compiled_sections = self.compile_sections(state)
             all_sections = compiled_sections["final_report"]
 
-            # Format system instructions for final compilation
+            # Generate final report with streaming
             system_instructions = FINAL_REPORT_FORMAT.format(
                 all_sections=all_sections,
                 report_organization=self.settings.report_structure
             )
 
-            # Generate final report
-            final_report = await self.primary_llm.ainvoke([
+            content_buffer = []
+            logger.debug("Starting final report streaming generation")
+            
+            # Stream the report generation
+            async for chunk in self.primary_llm.astream([
                 SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate a structured report.")
-            ])
+                HumanMessage(content="Generate the final report with proper formatting and transitions")
+            ]):
+                logger.debug(f"Received final report chunk: {chunk.content[:50]}...")
+                content_buffer.append(chunk.content)
+                
+                # Enviar el chunk al websocket
+                await self.send_progress("final_report_chunk", {
+                    "type": "report_content",
+                    "content": chunk.content,
+                    "is_complete": False
+                })
+
+            # Unir todo el contenido
+            final_report = "".join(content_buffer)
+            
+            # Enviar mensaje de completado
+            await self.send_progress("final_report_complete", {
+                "type": "report_content",
+                "content": final_report,
+                "is_complete": True
+            })
 
             logger.debug("Final report compilation completed")
-            return {"final_report": final_report.content}
+            return {"final_report": final_report}
 
         except Exception as e:
             logger.error(f"Error compiling final report: {str(e)}")
+            await self.send_progress("error", {"error": str(e)})
             raise
 
     def cleanup(self):

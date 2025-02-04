@@ -64,22 +64,27 @@ class ReportWriter:
     async def write_section(self, section: Section, context: str = None) -> AsyncGenerator[str, None]:
         """Write a single section with streaming progress"""
         try:
+            logger.debug(f"Starting write_section for: {section.name}")
             await self.send_progress("Starting section", {"section_name": section.name})
 
             system_instructions = SECTION_WRITER.format(
                 section_topic=section.description,
                 context=context if context else section.content
             )
+            logger.debug(f"System instructions prepared for: {section.name}")
 
             content_buffer = []
+            logger.debug(f"Starting streaming for section: {section.name}")
             async for chunk in self.primary_llm.astream([
                 SystemMessage(content=system_instructions),
                 HumanMessage(content="Generate section content")
             ]):
+                logger.debug(f"Received chunk for {section.name}: {chunk.content[:50]}...")
                 content_buffer.append(chunk.content)
                 await self.send_progress("content_chunk", {"content": chunk.content})
                 yield chunk.content  # Yield each chunk for streaming
 
+            logger.debug(f"Streaming completed for section: {section.name}")
             section.content = "".join(content_buffer)
             await self.send_progress("section_complete", {
                 "section_name": section.name,
@@ -87,28 +92,30 @@ class ReportWriter:
             })
 
         except Exception as e:
+            logger.error(f"Error in write_section for {section.name}: {str(e)}")
             await self.send_progress("error", {"error": str(e)})
             raise
 
     async def write_report(self, state: dict) -> AsyncGenerator[Dict, None]:
         """Process and write all sections with streaming updates"""
         try:
+            logger.debug("Starting write_report process")
             await self.send_progress("report_start", {
                 "total_sections": len(state["sections"])
             })
 
-            logger.debug("Starting report writing process")
             final_content = []
-
             for section in state["sections"]:
+                logger.debug(f"Processing section in write_report: {section.name}")
                 async for content in self.write_section(section):
+                    logger.debug(f"Yielding content from write_report for {section.name}")
                     yield {
                         "section": section.name,
                         "content": content
                     }
                 final_content.append(section.content)
 
-            logger.debug("Completed writing all sections")
+            logger.debug("Completed write_report process")
             await self.send_progress("report_complete", {
                 "completed_sections": final_content
             })

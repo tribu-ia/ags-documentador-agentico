@@ -1,7 +1,7 @@
 # dependencies
 colorama
 python-dotenv~=1.0.1
-uvicorn
+uvicorn~=0.34.0
 pydantic~=2.9.2
 fastapi~=0.115.6
 aiokafka
@@ -14,7 +14,7 @@ pydantic_settings
 langchain_scrapegraph
 python-dotenv
 uvicorn
-langchain
+langchain~=0.3.17
 langchain-openai~=0.3.0
 langsmith
 motor
@@ -43,3 +43,7 @@ protobuf~=5.29.3
 jsonschema~=4.23.0
 langchain-anthropic~=0.3.3
 langchain-google-vertexai~=2.0.11
+typing_extensions~=4.12.2
+tenacity~=9.0.0
+aiofiles~=24.1.0
+mistune~=3.1.1

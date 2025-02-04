@@ -19,18 +19,28 @@ logger = logging.getLogger(__name__)
 class ReportPlanner:
     """Class responsible for planning and organizing report generation."""
 
-    def __init__(self, settings=None):
+    def __init__(self, settings=None, websocket=None):
         """Initialize ReportPlanner with configuration settings."""
         self.settings = settings or get_settings()
+        self.websocket = websocket
+        
         # Initialize LLMManager with configuration
         llm_config = LLMConfig(
             temperature=0.0,
             streaming=True,
-            max_tokens=2000  # Adjust as needed
+            max_tokens=2000
         )
         self.llm_manager = LLMManager(llm_config)
-        # Get the primary LLM for report generation
         self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+
+    async def send_progress(self, message: str, data: dict = None):
+        """Send progress updates through websocket"""
+        if self.websocket:
+            await self.websocket.send_json({
+                "type": "planning_progress",
+                "message": message,
+                "data": data
+            })
 
     async def generate_search_queries(self, topic: str) -> Queries:
         """Generate initial search queries for the report topic.
@@ -75,7 +85,6 @@ class ReportPlanner:
             max_tokens_per_source=1000,
             include_raw_content=False
         )
-
     async def generate_sections(self, topic: str, source_str: str) -> Sections:
         """Generate report sections based on research results.
 

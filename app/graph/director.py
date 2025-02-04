@@ -5,14 +5,14 @@ from app.graph.researcher_builder import ResearcherGraphBuilder
 
 
 class GraphDirector:
-    """Director que maneja la construcción de grafos"""
+    """Director que maneja la construcción y ejecución de grafos"""
 
     @staticmethod
-    def construct_researcher_graph() -> StateGraph:
-        builder = ResearcherGraphBuilder()
+    def construct_researcher_graph(websocket=None) -> StateGraph:
+        builder = ResearcherGraphBuilder(websocket=websocket)
         return builder.build()
 
     @staticmethod
-    def construct_report_graph() -> StateGraph:
-        builder = ReportGraphBuilder()
+    def construct_report_graph(websocket=None) -> StateGraph:
+        builder = ReportGraphBuilder(websocket=websocket)
         return builder.build()

@@ -9,9 +9,9 @@ from app.utils.state import SectionState, SectionOutputState
 class ResearcherGraphBuilder(GraphBuilder):
     """Constructor del grafo de investigación"""
 
-    def __init__(self):
+    def __init__(self, websocket=None):
         super().__init__()
-        self.research_manager = ResearchManager()
+        self.research_manager = ResearchManager(websocket=websocket)
 
     def init_graph(self) -> None:
         self.graph = StateGraph(SectionState, output=SectionOutputState)

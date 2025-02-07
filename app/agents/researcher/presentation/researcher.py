@@ -30,6 +30,7 @@ from app.agents.researcher.application.use_cases.validate_query import ValidateQ
 from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
 from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
 from app.agents.researcher.application.use_cases.write_section import WriteSectionUseCase
+from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
 
 
 # Configuración avanzada de logging
@@ -69,6 +70,9 @@ class ResearchManager:
         else:
             logging.getLogger().setLevel(logging.INFO)
 
+        # Inicializar notificador de progreso
+        self.progress_notifier = ProgressNotifier(websocket, verbose)
+
         self.query_generator = GenerateQueriesUseCase(self.language_model)
         self.query_validator = ValidateQueryUseCase()
         self.web_searcher = WebSearchUseCase(
@@ -77,20 +81,11 @@ class ResearchManager:
         )
         self.section_writer = WriteSectionUseCase(self.language_model)
 
-    async def send_progress(self, message: str, data: Optional[Dict] = None):
-        """Send progress updates through websocket"""
-        if self.websocket:
-            await self.websocket.send_json({
-                "type": "research_progress",
-                "message": message,
-                "data": data
-            })
-
     async def generate_queries(self, state: SectionState) -> dict:
         """Generate and validate search queries using multiple engines."""
         try:
             section = state["section"]
-            await self.send_progress(f"Generating queries for section: {section.name}")
+            await self.progress_notifier.send_progress(f"Generating queries for section: {section.name}")
             
             initial_queries = await self.query_generator.generate(
                 section.name, 
@@ -99,7 +94,7 @@ class ResearchManager:
             )
             
             if not initial_queries:
-                await self.send_progress("No initial queries generated")
+                await self.progress_notifier.send_progress("No initial queries generated")
                 return {"search_queries": []}
             
             validated_queries = []
@@ -112,23 +107,30 @@ class ResearchManager:
                         ))
                         
                 except Exception as e:
-                    await self.send_progress("Query validation error", {"error": str(e)})
+                    await self.progress_notifier.send_progress(
+                        "Query validation error", 
+                        {"error": str(e)}
+                    )
                     continue
             
-            await self.send_progress("Queries generated", {
-                "count": len(validated_queries)
-            })
+            await self.progress_notifier.send_progress(
+                "Queries generated", 
+                {"count": len(validated_queries)}
+            )
             
             return {"search_queries": validated_queries}
 
         except Exception as e:
-            await self.send_progress("Error generating queries", {"error": str(e)})
+            await self.progress_notifier.send_progress(
+                "Error generating queries", 
+                {"error": str(e)}
+            )
             raise
 
     async def search_web(self, state: SectionState) -> dict:
         """Perform web searches based on generated queries."""
         try:
-            await self.send_progress("Starting web search")
+            await self.progress_notifier.send_progress("Starting web search")
             search_queries = state["search_queries"]
 
             # Extraer las queries
@@ -137,11 +139,11 @@ class ResearchManager:
             # Usar el caso de uso de búsqueda
             source_str = await self.web_searcher.search(query_list)
 
-            await self.send_progress("Web search completed")
+            await self.progress_notifier.send_progress("Web search completed")
             return {"source_str": source_str}
 
         except Exception as e:
-            await self.send_progress("Error during web search", {"error": str(e)})
+            await self.progress_notifier.send_progress("Error during web search", {"error": str(e)})
             raise
 
     async def write_section(self, state: SectionState) -> dict:
@@ -150,7 +152,7 @@ class ResearchManager:
             section = state["section"]
             source_str = state["source_str"]
             
-            await self.send_progress(f"Writing section: {section.name}")
+            await self.progress_notifier.send_progress(f"Writing section: {section.name}")
 
             section_content = await self.section_writer.write(section, source_str)
             
@@ -158,13 +160,13 @@ class ResearchManager:
                 setattr(section, "content", section_content)
                 
                 logger.debug(f"Completed writing section: {section.name}")
-                await self.send_progress("Section completed", {
+                await self.progress_notifier.send_progress("Section completed", {
                     "section_name": section.name
                 })
                 return {"completed_sections": [section]}
 
         except Exception as e:
-            await self.send_progress("Error writing section", {"error": str(e)})
+            await self.progress_notifier.send_progress("Error writing section", {"error": str(e)})
             raise
 
     def _normalize_query(self, query: str) -> str:
@@ -272,7 +274,7 @@ class ResearchManager:
     async def research_section(self, section: Section) -> Section:
         """Research a section with progress updates"""
         try:
-            await self.send_progress("Iniciando investigación de la sección")
+            await self.progress_notifier.send_progress("Iniciando investigación de la sección")
 
             # Crear estado inicial con la sección
             initial_state = {
@@ -284,7 +286,7 @@ class ResearchManager:
             }
 
             # Generar queries de búsqueda
-            await self.send_progress("Generando consultas de búsqueda")
+            await self.progress_notifier.send_progress("Generando consultas de búsqueda")
             queries_result = await self.generate_queries(initial_state)
             
             # Actualizar estado con queries
@@ -297,11 +299,11 @@ class ResearchManager:
             }
             
             # Realizar búsqueda web
-            await self.send_progress("Realizando búsqueda web")
+            await self.progress_notifier.send_progress("Realizando búsqueda web")
             search_results = await self.search_web(search_state)
             
             # Procesar resultados y escribir sección
-            await self.send_progress("Procesando resultados")
+            await self.progress_notifier.send_progress("Procesando resultados")
             write_state = SectionState(
                 section=section,
                 search_queries=queries_result["search_queries"],
@@ -318,12 +320,12 @@ class ResearchManager:
                 "content": result["completed_sections"][0]["content"]
             })
 
-            await self.send_progress("Investigación completada")
+            await self.progress_notifier.send_progress("Investigación completada")
             return result["completed_sections"][0]
 
         except Exception as e:
             logger.error(f"Error en investigación: {str(e)}")
-            await self.send_progress("Error en investigación", {"error": str(e)})
+            await self.progress_notifier.send_progress("Error en investigación", {"error": str(e)})
             raise
 
     async def recover_state(self, section: Section) -> Optional[Section]:

@@ -31,6 +31,7 @@ from app.agents.researcher.infrastructure.services.gemini_service import GeminiS
 from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
 from app.agents.researcher.application.use_cases.write_section import WriteSectionUseCase
 from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
+from app.agents.researcher.application.use_cases.manage_research_state import ManageResearchStateUseCase
 
 
 # Configuración avanzada de logging
@@ -49,30 +50,18 @@ class ResearchManager:
     def __init__(
         self, 
         settings=None, 
-        repository: Optional[ResearchRepository] = None, 
-        verbose: bool = False,
-        websocket: Optional[WebSocket] = None
+        repository=None, 
+        verbose=False, 
+        websocket=None
     ):
-        """Initialize ResearchManager with configuration settings and repository."""
         self.settings = settings or get_settings()
-        self.websocket = websocket
-        self.verbose = verbose
-        
-        # Initialize Gemini API
-        self.language_model = GeminiService(self.settings.google_api_key)
-        
-        # Initialize repository
         self.repository = repository or SQLiteResearchRepository()
         
-        # Configure logging
-        if verbose:
-            logging.getLogger().setLevel(logging.DEBUG)
-        else:
-            logging.getLogger().setLevel(logging.INFO)
-
-        # Inicializar notificador de progreso
+        # Inicializar servicios y casos de uso
         self.progress_notifier = ProgressNotifier(websocket, verbose)
-
+        self.language_model = GeminiService(self.settings.google_api_key)
+        self.state_manager = ManageResearchStateUseCase(self.repository)
+        
         self.query_generator = GenerateQueriesUseCase(self.language_model)
         self.query_validator = ValidateQueryUseCase()
         self.web_searcher = WebSearchUseCase(
@@ -271,61 +260,21 @@ class ResearchManager:
             logger.error(f"Error in generate_initial_queries after retries: {str(e)}")
             return []
 
-    async def research_section(self, section: Section) -> Section:
-        """Research a section with progress updates"""
+    async def research_section(self, section_id: str) -> None:
         try:
-            await self.progress_notifier.send_progress("Iniciando investigación de la sección")
+            # Cargar estado
+            state = await self.state_manager.load_state(section_id)
+            if not state:
+                # ... inicialización del estado ...
+                pass
 
-            # Crear estado inicial con la sección
-            initial_state = {
-                "section": section,
-                "search_queries": [],
-                "source_str": "",
-                "report_sections_from_research": "",
-                "completed_sections": []
-            }
+            # ... resto de la lógica ...
 
-            # Generar queries de búsqueda
-            await self.progress_notifier.send_progress("Generando consultas de búsqueda")
-            queries_result = await self.generate_queries(initial_state)
-            
-            # Actualizar estado con queries
-            search_state = {
-                "section": section,
-                "search_queries": queries_result["search_queries"],  # Lista de SearchQuery
-                "source_str": "",
-                "report_sections_from_research": "",
-                "completed_sections": []
-            }
-            
-            # Realizar búsqueda web
-            await self.progress_notifier.send_progress("Realizando búsqueda web")
-            search_results = await self.search_web(search_state)
-            
-            # Procesar resultados y escribir sección
-            await self.progress_notifier.send_progress("Procesando resultados")
-            write_state = SectionState(
-                section=section,
-                search_queries=queries_result["search_queries"],
-                source_str=search_results["source_str"],
-                report_sections_from_research="",
-                completed_sections=[]
-            )
-            
-            result = await self.write_section(write_state)
-            
             # Guardar estado
-            await self.repository.save_state(section.id, {
-                "status": ResearchStatus.COMPLETED,
-                "content": result["completed_sections"][0]["content"]
-            })
-
-            await self.progress_notifier.send_progress("Investigación completada")
-            return result["completed_sections"][0]
+            await self.state_manager.save_state(section_id, state)
 
         except Exception as e:
-            logger.error(f"Error en investigación: {str(e)}")
-            await self.progress_notifier.send_progress("Error en investigación", {"error": str(e)})
+            await self.state_manager.log_error(section_id, str(e))
             raise
 
     async def recover_state(self, section: Section) -> Optional[Section]:

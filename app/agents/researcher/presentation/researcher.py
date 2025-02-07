@@ -30,10 +30,10 @@ from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import SectionState, Section
 from pydantic import BaseModel, Field
-from app.agents.researcher.domain.entities.metrics_data import MetricsData
-from app.agents.researcher.domain.entities.search_engine import SearchEngine
+
 from app.agents.researcher.domain.entities.query_validation import QueryValidation
 from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
+from app.agents.researcher.infrastructure.repositories.sqlite_repository import SQLiteResearchRepository
 
 
 # Configuración avanzada de logging
@@ -85,52 +85,6 @@ class ResearchStateSchema(BaseModel):
     content: Optional[str] = None
     last_updated: datetime = Field(default_factory=datetime.utcnow)
     error_log: List[Dict] = Field(default_factory=list)
-
-class SQLiteResearchRepository(ResearchRepository):
-    def __init__(self, db_path: str = "research_state.db"):
-        """Initialize SQLite repository"""
-        self.db_path = db_path
-        self._init_db()
-
-    def _init_db(self):
-        """Initialize SQLite database with required tables"""
-        with sqlite3.connect(self.db_path) as conn:
-            # Existing tables
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS research_state (
-                    section_id TEXT PRIMARY KEY,
-                    state_json TEXT,
-                    created_at TIMESTAMP,
-                    updated_at TIMESTAMP
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS error_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    section_id TEXT,
-                    error_message TEXT,
-                    timestamp TIMESTAMP
-                )
-            """)
-            # New table for metrics
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS performance_metrics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    metrics_json TEXT,
-                    timestamp TIMESTAMP
-                )
-            """)
-
-    async def save_metrics(self, metrics: Dict) -> None:
-        """Save performance metrics to database"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT INTO error_log (section_id, error_message, timestamp)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                """, (section_id, error_message))
-        except Exception as e:
-            logger.error(f"Error saving metrics: {str(e)}")
 
 class ResearchManager:
     def __init__(

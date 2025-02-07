@@ -17,11 +17,8 @@ from tenacity import (
 )
 import logging
 import time
-from functools import wraps
-from contextlib import contextmanager
 
 from app.config.config import get_settings
-from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import SectionState, Section
 from app.agents.researcher.domain.entities.query_validation import QueryValidation
 from app.agents.researcher.domain.entities.research_status import ResearchStatus
@@ -31,6 +28,7 @@ from app.agents.researcher.application.decorators.metrics_decorator import track
 from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
 from app.agents.researcher.application.use_cases.validate_query import ValidateQueryUseCase
 from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
+from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
 
 
 # Configuración avanzada de logging
@@ -72,6 +70,10 @@ class ResearchManager:
 
         self.query_generator = GenerateQueriesUseCase(self.language_model)
         self.query_validator = ValidateQueryUseCase()
+        self.web_searcher = WebSearchUseCase(
+            self.settings.tavily_topic,
+            self.settings.tavily_days
+        )
 
     async def send_progress(self, message: str, data: Optional[Dict] = None):
         """Send progress updates through websocket"""
@@ -127,20 +129,11 @@ class ResearchManager:
             await self.send_progress("Starting web search")
             search_queries = state["search_queries"]
 
-            # Extraer las queries asumiendo que son objetos SearchQuery
+            # Extraer las queries
             query_list = [query.search_query for query in search_queries]
-            search_docs = await tavily_search_async(
-                query_list,
-                self.settings.tavily_topic,
-                self.settings.tavily_days
-            )
-
-            # Format and deduplicate results
-            source_str = deduplicate_and_format_sources(
-                search_docs,
-                max_tokens_per_source=5000,
-                include_raw_content=True
-            )
+            
+            # Usar el caso de uso de búsqueda
+            source_str = await self.web_searcher.search(query_list)
 
             await self.send_progress("Web search completed")
             return {"source_str": source_str}

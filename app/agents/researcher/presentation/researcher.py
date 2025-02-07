@@ -32,6 +32,7 @@ from app.agents.researcher.application.use_cases.web_search import WebSearchUseC
 from app.agents.researcher.application.use_cases.write_section import WriteSectionUseCase
 from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
 from app.agents.researcher.application.use_cases.manage_research_state import ManageResearchStateUseCase
+from app.agents.researcher.application.use_cases.initialize_research import InitializeResearchUseCase
 
 
 # Configuración avanzada de logging
@@ -61,6 +62,7 @@ class ResearchManager:
         self.progress_notifier = ProgressNotifier(websocket, verbose)
         self.language_model = GeminiService(self.settings.google_api_key)
         self.state_manager = ManageResearchStateUseCase(self.repository)
+        self.initializer = InitializeResearchUseCase()
         
         self.query_generator = GenerateQueriesUseCase(self.language_model)
         self.query_validator = ValidateQueryUseCase()
@@ -260,21 +262,23 @@ class ResearchManager:
             logger.error(f"Error in generate_initial_queries after retries: {str(e)}")
             return []
 
-    async def research_section(self, section_id: str) -> None:
+    async def research_section(self, section: Section) -> None:
         try:
-            # Cargar estado
-            state = await self.state_manager.load_state(section_id)
+            # Validar sección
+            self.initializer.validate_section(section)
+            
+            # Cargar o inicializar estado
+            state = await self.state_manager.load_state(section.id)
             if not state:
-                # ... inicialización del estado ...
-                pass
+                state = self.initializer.initialize_state(section)
+                await self.state_manager.save_state(section.id, state)
 
-            # ... resto de la lógica ...
 
-            # Guardar estado
-            await self.state_manager.save_state(section_id, state)
-
+        except ValueError as e:
+            await self.progress_notifier.send_progress("Invalid section data", {"error": str(e)})
+            raise
         except Exception as e:
-            await self.state_manager.log_error(section_id, str(e))
+            await self.state_manager.log_error(section.id, str(e))
             raise
 
     async def recover_state(self, section: Section) -> Optional[Section]:

@@ -2,7 +2,6 @@ import logging
 from typing import Dict, Optional
 from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
 from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
-from app.utils.state import ResearchState, SectionState
 
 logger = logging.getLogger(__name__)
 

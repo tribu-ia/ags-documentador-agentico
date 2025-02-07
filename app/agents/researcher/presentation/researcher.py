@@ -23,15 +23,14 @@ from contextlib import contextmanager
 from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import SectionState, Section
-from pydantic import BaseModel, Field
-from app.agents.researcher.domain.entities.metrics_data import MetricsData
-from app.agents.researcher.domain.entities.search_engine import SearchEngine
 from app.agents.researcher.domain.entities.query_validation import QueryValidation
 from app.agents.researcher.domain.entities.research_status import ResearchStatus
-from app.agents.researcher.domain.entities.research_state_schema import ResearchStateSchema
 from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
 from app.agents.researcher.infrastructure.repositories.sqlite_repository import SQLiteResearchRepository
 from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
+from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
+from app.agents.researcher.application.use_cases.validate_query import ValidateQueryUseCase
+from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
 
 
 # Configuración avanzada de logging
@@ -60,8 +59,7 @@ class ResearchManager:
         self.verbose = verbose
         
         # Initialize Gemini API
-        genai.configure(api_key=self.settings.google_api_key)
-        self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        self.language_model = GeminiService(self.settings.google_api_key)
         
         # Initialize repository
         self.repository = repository or SQLiteResearchRepository()
@@ -71,6 +69,9 @@ class ResearchManager:
             logging.getLogger().setLevel(logging.DEBUG)
         else:
             logging.getLogger().setLevel(logging.INFO)
+
+        self.query_generator = GenerateQueriesUseCase(self.language_model)
+        self.query_validator = ValidateQueryUseCase()
 
     async def send_progress(self, message: str, data: Optional[Dict] = None):
         """Send progress updates through websocket"""
@@ -87,7 +88,11 @@ class ResearchManager:
             section = state["section"]
             await self.send_progress(f"Generating queries for section: {section.name}")
             
-            initial_queries = await self.generate_initial_queries(state)
+            initial_queries = await self.query_generator.generate(
+                section.name, 
+                section.description,
+                self.settings.number_of_queries
+            )
             
             if not initial_queries:
                 await self.send_progress("No initial queries generated")
@@ -96,9 +101,8 @@ class ResearchManager:
             validated_queries = []
             for query in initial_queries:
                 try:
-                    validation = await self.validate_query(query)
+                    validation = await self.query_validator.validate(query)
                     if validation.overall_score >= 0.6:
-                        # Crear un SearchQuery en lugar de un dict
                         validated_queries.append(SearchQuery(
                             search_query=query
                         ))
@@ -225,9 +229,9 @@ class ResearchManager:
                 prompt = prompt[:30000] + "..."
                 logger.debug("Prompt truncated due to length")
             
-            response = await self.gemini_model.generate_content_async(
+            response = await self.language_model.generate_content(
                 prompt,
-                generation_config={
+                config={
                     'temperature': 0.1,
                     'max_output_tokens': 8192,
                     'top_p': 0.8,
@@ -238,7 +242,7 @@ class ResearchManager:
             duration = time.time() - start_time
             logger.debug(f"Gemini API call completed in {duration:.2f} seconds")
             
-            return response.text.strip() if response else ""
+            return response.strip() if response else ""
             
         except Exception as e:
             logger.error(f"Gemini API call failed: {str(e)}")

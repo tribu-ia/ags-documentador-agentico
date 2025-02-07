@@ -29,6 +29,7 @@ from app.agents.researcher.application.use_cases.generate_queries import Generat
 from app.agents.researcher.application.use_cases.validate_query import ValidateQueryUseCase
 from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
 from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
+from app.agents.researcher.application.use_cases.write_section import WriteSectionUseCase
 
 
 # Configuración avanzada de logging
@@ -74,6 +75,7 @@ class ResearchManager:
             self.settings.tavily_topic,
             self.settings.tavily_days
         )
+        self.section_writer = WriteSectionUseCase(self.language_model)
 
     async def send_progress(self, message: str, data: Optional[Dict] = None):
         """Send progress updates through websocket"""
@@ -145,55 +147,17 @@ class ResearchManager:
     async def write_section(self, state: SectionState) -> dict:
         """Write a section based on research results."""
         try:
-            section = state["section"]  # Acceder como diccionario
-            source_str = state["source_str"]  # Acceder como diccionario
+            section = state["section"]
+            source_str = state["source_str"]
             
             await self.send_progress(f"Writing section: {section.name}")
 
-            prompt = f"""
-            Write a detailed section about: {section.name}
-            Topic description: {section.description}
+            section_content = await self.section_writer.write(section, source_str)
             
-            Use this research as context:
-            {source_str}
-            
-            Requirements:
-            - Be comprehensive but concise
-            - Focus on factual information
-            - Include specific examples where relevant
-            - Maintain a professional tone
-            
-            Maximum length: 2000 words.
-            Write the section content now.
-            """
-
-            try:
-                section_content = await self._call_gemini_with_retry(prompt)
-                if not section_content:
-                    raise ValueError("Empty response from Gemini")
-                
-                # Usar setattr en lugar de asignación de diccionario
+            if section_content:
                 setattr(section, "content", section_content)
                 
                 logger.debug(f"Completed writing section: {section.name}")
-                await self.send_progress("Section completed", {
-                    "section_name": section.name
-                })
-                return {"completed_sections": [section]}
-
-            except Exception as e:
-                logger.error(f"Error in first attempt, trying with reduced content: {str(e)}")
-                shorter_prompt = f"""
-                Write a brief section about: {section.name}
-                Topic description: {section.description}
-                Key points from sources: {source_str[:5000]}...
-                
-                Write a concise summary (max 500 words).
-                """
-                section_content = await self._call_gemini_with_retry(shorter_prompt)
-                # Usar setattr en lugar de asignación de diccionario
-                setattr(section, "content", section_content)
-                
                 await self.send_progress("Section completed", {
                     "section_name": section.name
                 })

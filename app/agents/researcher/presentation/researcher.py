@@ -30,6 +30,10 @@ from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import SectionState, Section
 from pydantic import BaseModel, Field
+from app.agents.researcher.domain.entities.metrics_data import MetricsData
+from app.agents.researcher.domain.entities.search_engine import SearchEngine
+from app.agents.researcher.domain.entities.query_validation import QueryValidation
+from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
 
 
 # Configuración avanzada de logging
@@ -64,21 +68,6 @@ def track_metrics(func):
             raise
     return wrapper
 
-class SearchEngine(Enum):
-    TAVILY = "tavily"
-    GEMINI = "gemini"
-    DEEP_RESEARCH = "deep_research"
-
-@dataclass
-class QueryValidation:
-    specificity: float
-    relevance: float
-    clarity: float
-    
-    @property
-    def overall_score(self) -> float:
-        return (self.specificity + self.relevance + self.clarity) / 3
-
 class ResearchStatus(Enum):
     NOT_STARTED = "not_started"
     GENERATING_QUERIES = "generating_queries"
@@ -96,24 +85,6 @@ class ResearchStateSchema(BaseModel):
     content: Optional[str] = None
     last_updated: datetime = Field(default_factory=datetime.utcnow)
     error_log: List[Dict] = Field(default_factory=list)
-
-class ResearchRepository(Protocol):
-    """Interface for research state persistence"""
-    async def save_state(self, section_id: str, state: Dict) -> None:
-        """Save research state"""
-        pass
-
-    async def load_state(self, section_id: str) -> Optional[Dict]:
-        """Load research state"""
-        pass
-
-    async def log_error(self, section_id: str, error_message: str) -> None:
-        """Log error message"""
-        pass
-
-    async def save_metrics(self, metrics: Dict) -> None:
-        """Save performance metrics"""
-        pass
 
 class SQLiteResearchRepository(ResearchRepository):
     def __init__(self, db_path: str = "research_state.db"):

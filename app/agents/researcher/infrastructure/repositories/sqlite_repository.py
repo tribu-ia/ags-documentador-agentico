@@ -1,7 +1,6 @@
 import sqlite3
 import logging
-from typing import Dict, Optional
-from datetime import datetime
+from typing import Dict
 
 from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
 from .research_queries import ResearchQueries

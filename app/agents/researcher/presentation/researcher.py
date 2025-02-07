@@ -5,7 +5,6 @@ import google.generativeai as genai
 import hashlib
 import re
 from dataclasses import dataclass, asdict
-from enum import Enum
 import asyncio
 
 from starlette.websockets import WebSocket
@@ -17,23 +16,22 @@ from tenacity import (
     before_sleep_log
 )
 import logging
-import json
-from datetime import datetime
-import sqlite3
 import time
 from functools import wraps
-import traceback
 from contextlib import contextmanager
-import sys
 
 from app.config.config import get_settings
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.utils.state import SectionState, Section
 from pydantic import BaseModel, Field
-
+from app.agents.researcher.domain.entities.metrics_data import MetricsData
+from app.agents.researcher.domain.entities.search_engine import SearchEngine
 from app.agents.researcher.domain.entities.query_validation import QueryValidation
+from app.agents.researcher.domain.entities.research_status import ResearchStatus
+from app.agents.researcher.domain.entities.research_state_schema import ResearchStateSchema
 from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
 from app.agents.researcher.infrastructure.repositories.sqlite_repository import SQLiteResearchRepository
+from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
 
 
 # Configuración avanzada de logging
@@ -47,44 +45,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-def track_metrics(func):
-    """Decorator to track function metrics"""
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        start_time = time.time()
-        try:
-            result = await func(self, *args, **kwargs)
-            end_time = time.time()
-            
-            # Log metrics without requiring section_id
-            logger.debug(
-                f"Function {func.__name__} completed in {end_time - start_time:.2f} seconds"
-            )
-            
-            return result
-        except Exception as e:
-            logger.error(f"Error in {func.__name__}: {str(e)}")
-            raise
-    return wrapper
-
-class ResearchStatus(Enum):
-    NOT_STARTED = "not_started"
-    GENERATING_QUERIES = "generating_queries"
-    SEARCHING = "searching"
-    WRITING = "writing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-class ResearchStateSchema(BaseModel):
-    """Schema for validating research state"""
-    section_id: str
-    status: ResearchStatus
-    queries: List[Dict] = Field(default_factory=list)
-    sources: List[Dict] = Field(default_factory=list)
-    content: Optional[str] = None
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
-    error_log: List[Dict] = Field(default_factory=list)
 
 class ResearchManager:
     def __init__(

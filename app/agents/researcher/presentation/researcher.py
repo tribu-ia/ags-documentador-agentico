@@ -37,6 +37,7 @@ from app.agents.researcher.application.use_cases.research_section import Researc
 from app.agents.researcher.infrastructure.services.prompt_generation_service import PromptGenerationService
 from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
 from app.agents.researcher.application.use_cases.generate_initial_queries import GenerateInitialQueriesUseCase
+from app.agents.researcher.application.use_cases.search_web_queries import SearchWebQueriesUseCase
 
 
 # Configuración avanzada de logging
@@ -80,6 +81,10 @@ class ResearchManager:
             self.settings.tavily_topic,
             self.settings.tavily_days
         )
+        self.search_web_queries = SearchWebQueriesUseCase(
+            self.web_searcher,
+            self.progress_notifier
+        )
         self.section_writer = WriteSectionUseCase(self.language_model)
         self.section_state_recovery = RecoverSectionStateUseCase(self.repository)
         self.research_section_use_case = ResearchSectionUseCase(
@@ -95,22 +100,7 @@ class ResearchManager:
 
     async def search_web(self, state: SectionState) -> dict:
         """Perform web searches based on generated queries."""
-        try:
-            await self.progress_notifier.send_progress("Starting web search")
-            search_queries = state["search_queries"]
-
-            # Extraer las queries
-            query_list = [query.search_query for query in search_queries]
-            
-            # Usar el caso de uso de búsqueda
-            source_str = await self.web_searcher.search(query_list)
-
-            await self.progress_notifier.send_progress("Web search completed")
-            return {"source_str": source_str}
-
-        except Exception as e:
-            await self.progress_notifier.send_progress("Error during web search", {"error": str(e)})
-            raise
+        return await self.search_web_queries.execute(state)
 
     async def write_section(self, state: SectionState) -> dict:
         """Write a section based on research results."""

@@ -35,6 +35,7 @@ from app.agents.researcher.application.use_cases.initialize_research import Init
 from app.agents.researcher.application.use_cases.recover_section_state import RecoverSectionStateUseCase
 from app.agents.researcher.application.use_cases.research_section import ResearchSectionUseCase
 from app.agents.researcher.infrastructure.services.prompt_generation_service import PromptGenerationService
+from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
 
 
 # Configuración avanzada de logging
@@ -68,6 +69,12 @@ class ResearchManager:
         
         self.prompt_generator = PromptGenerationService(self.language_model)
         self.query_validator = ValidateQueryUseCase()
+        self.generate_queries_use_case = GenerateQueriesUseCase(
+            self.prompt_generator,
+            self.query_validator,
+            self.progress_notifier,
+            self.settings.number_of_queries
+        )
         self.web_searcher = WebSearchUseCase(
             self.settings.tavily_topic,
             self.settings.tavily_days
@@ -82,49 +89,7 @@ class ResearchManager:
 
     async def generate_queries(self, state: SectionState) -> dict:
         """Generate and validate search queries using multiple engines."""
-        try:
-            section = state["section"]
-            await self.progress_notifier.send_progress(f"Generating queries for section: {section.name}")
-            
-            initial_queries = await self.prompt_generator.generate(
-                section.name, 
-                section.description,
-                self.settings.number_of_queries
-            )
-            
-            if not initial_queries:
-                await self.progress_notifier.send_progress("No initial queries generated")
-                return {"search_queries": []}
-            
-            validated_queries = []
-            for query in initial_queries:
-                try:
-                    validation = await self.query_validator.validate(query)
-                    if validation.overall_score >= 0.6:
-                        validated_queries.append(SearchQuery(
-                            search_query=query
-                        ))
-                        
-                except Exception as e:
-                    await self.progress_notifier.send_progress(
-                        "Query validation error", 
-                        {"error": str(e)}
-                    )
-                    continue
-            
-            await self.progress_notifier.send_progress(
-                "Queries generated", 
-                {"count": len(validated_queries)}
-            )
-            
-            return {"search_queries": validated_queries}
-
-        except Exception as e:
-            await self.progress_notifier.send_progress(
-                "Error generating queries", 
-                {"error": str(e)}
-            )
-            raise
+        return await self.generate_queries_use_case.execute(state)
 
     async def search_web(self, state: SectionState) -> dict:
         """Perform web searches based on generated queries."""

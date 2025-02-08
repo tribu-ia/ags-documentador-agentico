@@ -25,7 +25,6 @@ from app.agents.researcher.domain.entities.research_status import ResearchStatus
 from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
 from app.agents.researcher.infrastructure.repositories.sqlite_repository import SQLiteResearchRepository
 from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
-from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
 from app.agents.researcher.application.use_cases.validate_query import ValidateQueryUseCase
 from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
 from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
@@ -35,6 +34,7 @@ from app.agents.researcher.application.use_cases.manage_research_state import Ma
 from app.agents.researcher.application.use_cases.initialize_research import InitializeResearchUseCase
 from app.agents.researcher.application.use_cases.recover_section_state import RecoverSectionStateUseCase
 from app.agents.researcher.application.use_cases.research_section import ResearchSectionUseCase
+from app.agents.researcher.infrastructure.services.prompt_generation_service import PromptGenerationService
 
 
 # Configuración avanzada de logging
@@ -66,7 +66,7 @@ class ResearchManager:
         self.state_manager = ManageResearchStateUseCase(self.repository)
         self.initializer = InitializeResearchUseCase()
         
-        self.query_generator = GenerateQueriesUseCase(self.language_model)
+        self.prompt_generator = PromptGenerationService(self.language_model)
         self.query_validator = ValidateQueryUseCase()
         self.web_searcher = WebSearchUseCase(
             self.settings.tavily_topic,
@@ -86,7 +86,7 @@ class ResearchManager:
             section = state["section"]
             await self.progress_notifier.send_progress(f"Generating queries for section: {section.name}")
             
-            initial_queries = await self.query_generator.generate(
+            initial_queries = await self.prompt_generator.generate(
                 section.name, 
                 section.description,
                 self.settings.number_of_queries

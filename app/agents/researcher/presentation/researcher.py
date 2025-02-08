@@ -93,6 +93,14 @@ class ResearchManager:
             self.progress_notifier
         )
         self.generate_initial_queries = GenerateInitialQueriesUseCase(self.language_model)
+        
+        # Configuración para grounding
+        self.grounding_config = {
+            'temperature': 0.7,
+            'candidate_count': 1,
+            'top_k': 40,
+            'top_p': 0.95,
+        }
 
     async def generate_queries(self, state: SectionState) -> dict:
         """Generate and validate search queries using multiple engines."""
@@ -123,6 +131,42 @@ class ResearchManager:
 
         except Exception as e:
             await self.progress_notifier.send_progress("Error writing section", {"error": str(e)})
+            raise
+
+    async def write_section_with_grounding(self, state: SectionState) -> dict:
+        """Write a section based on research results using grounding."""
+        try:
+            section = state["section"]
+            source_str = state["source_str"]
+            
+            await self.progress_notifier.send_progress(f"Writing section with grounding: {section.name}")
+
+            grounded_result = await self.section_writer.write_with_grounding(
+                section, 
+                source_str, 
+                self.grounding_config
+            )
+            
+            if grounded_result['content']:
+                setattr(section, "content", grounded_result['content'])
+                if grounded_result.get('grounding_metadata'):
+                    setattr(section, "grounding_metadata", grounded_result['grounding_metadata'])
+                
+                logger.debug(f"Completed writing section with grounding: {section.name}")
+                await self.progress_notifier.send_progress("Section completed", {
+                    "section_name": section.name,
+                    "grounded": True
+                })
+                return {
+                    "completed_sections": [section],
+                    "grounding_metadata": grounded_result.get('grounding_metadata')
+                }
+
+        except Exception as e:
+            await self.progress_notifier.send_progress(
+                "Error writing section with grounding", 
+                {"error": str(e)}
+            )
             raise
 
     def _normalize_query(self, query: str) -> str:

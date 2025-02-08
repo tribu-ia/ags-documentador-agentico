@@ -34,6 +34,7 @@ from app.agents.researcher.infrastructure.services.progress_notifier import Prog
 from app.agents.researcher.application.use_cases.manage_research_state import ManageResearchStateUseCase
 from app.agents.researcher.application.use_cases.initialize_research import InitializeResearchUseCase
 from app.agents.researcher.application.use_cases.recover_section_state import RecoverSectionStateUseCase
+from app.agents.researcher.application.use_cases.research_section import ResearchSectionUseCase
 
 
 # Configuración avanzada de logging
@@ -73,6 +74,11 @@ class ResearchManager:
         )
         self.section_writer = WriteSectionUseCase(self.language_model)
         self.section_state_recovery = RecoverSectionStateUseCase(self.repository)
+        self.research_section_use_case = ResearchSectionUseCase(
+            self.initializer,
+            self.state_manager,
+            self.progress_notifier
+        )
 
     async def generate_queries(self, state: SectionState) -> dict:
         """Generate and validate search queries using multiple engines."""
@@ -265,23 +271,8 @@ class ResearchManager:
             return []
 
     async def research_section(self, section: Section) -> None:
-        try:
-            # Validar sección
-            self.initializer.validate_section(section)
-            
-            # Cargar o inicializar estado
-            state = await self.state_manager.load_state(section.id)
-            if not state:
-                state = self.initializer.initialize_state(section)
-                await self.state_manager.save_state(section.id, state)
-
-
-        except ValueError as e:
-            await self.progress_notifier.send_progress("Invalid section data", {"error": str(e)})
-            raise
-        except Exception as e:
-            await self.state_manager.log_error(section.id, str(e))
-            raise
+        """Proxy method for section research"""
+        return await self.research_section_use_case.execute(section)
 
     async def recover_state(self, section: Section) -> Optional[Section]:
         """Proxy method for section state recovery"""

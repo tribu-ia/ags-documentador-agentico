@@ -3,7 +3,7 @@ from typing import Dict, Optional
 import logging
 from app.agents.researcher.domain.interfaces.language_model import LanguageModel
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) 
 
 
 class GeminiService(LanguageModel):

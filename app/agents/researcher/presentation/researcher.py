@@ -94,6 +94,12 @@ class ResearchManager:
         )
         self.generate_initial_queries = GenerateInitialQueriesUseCase(self.language_model)
         
+        # Configuración para determinar el uso de grounding
+        self.grounding_threshold = {
+            'relevance_score': 0.7,  # Umbral para decidir usar grounding
+            'query_complexity': 0.6   # Umbral de complejidad de la consulta
+        }
+        
         # Configuración para grounding
         self.grounding_config = {
             'temperature': 0.7,
@@ -103,8 +109,54 @@ class ResearchManager:
         }
 
     async def generate_queries(self, state: SectionState) -> dict:
-        """Generate and validate search queries using multiple engines."""
-        return await self.generate_queries_use_case.execute(state)
+        """Generate and validate search queries using multiple engines with smart selection."""
+        try:
+            section = state["section"]
+            
+            # Evaluar complejidad de la sección para determinar el método
+            complexity_score = await self._evaluate_search_complexity(
+                section.name,
+                section.description
+            )
+            
+            await self.progress_notifier.send_progress(
+                f"Generating queries for section: {section.name}"
+            )
+
+            # Generar queries usando el método apropiado
+            if complexity_score >= self.grounding_threshold['query_complexity']:
+                # Usar grounding para consultas complejas
+                queries_result = await self.generate_queries_use_case.execute_with_grounding(
+                    state,
+                    self.grounding_config
+                )
+                method_used = 'grounding'
+            else:
+                # Usar método normal para consultas simples
+                queries_result = await self.generate_queries_use_case.execute(state)
+                method_used = 'normal'
+
+            # Agregar métricas de decisión al resultado
+            queries_result['decision_metrics'] = {
+                'complexity_score': complexity_score,
+                'threshold_used': self.grounding_threshold['query_complexity'],
+                'method_used': method_used
+            }
+
+            await self.progress_notifier.send_progress(
+                f"Generated queries using {method_used} method",
+                {"section_name": section.name}
+            )
+
+            return queries_result
+
+        except Exception as e:
+            await self.progress_notifier.send_progress(
+                "Error generating queries", 
+                {"error": str(e)}
+            )
+            logger.error(f"Error generating queries: {str(e)}")
+            raise
 
     async def search_web(self, state: SectionState) -> dict:
         """Perform web searches based on generated queries."""
@@ -224,6 +276,76 @@ class ResearchManager:
         """Cleanup method to clear Gemini API caches when done."""
         pass
 
+    async def _evaluate_search_complexity(self, query: str, context: str) -> float:
+        """Evalúa la complejidad de la búsqueda basada en el query y contexto"""
+        try:
+            evaluation_prompt = f"""
+            Evalúa la complejidad y necesidad de información actualizada para esta búsqueda:
+            Query: {query}
+            Contexto: {context}
+            
+            Responde con un número entre 0 y 1, donde:
+            - 0-0.5: Consulta simple o información general
+            - 0.6-1.0: Consulta compleja o necesita información actualizada
+            """
+            
+            response = await self.language_model.generate_content(
+                evaluation_prompt,
+                {'temperature': 0.1}  # Baja temperatura para respuestas más consistentes
+            )
+            
+            try:
+                score = float(response.strip())
+                return min(max(score, 0.0), 1.0)  # Asegurar que esté entre 0 y 1
+            except ValueError:
+                return 0.5  # Valor por defecto si no se puede convertir
+                
+        except Exception as e:
+            logger.warning(f"Error evaluating search complexity: {str(e)}")
+            return 0.5  # Valor por defecto en caso de error
+
+    async def write_section_smart(self, state: SectionState) -> dict:
+        """Escribe una sección eligiendo automáticamente entre grounding y método normal"""
+        try:
+            section = state["section"]
+            source_str = state["source_str"]
+            
+            # Evaluar complejidad de la búsqueda
+            complexity_score = await self._evaluate_search_complexity(
+                section.name, 
+                section.description
+            )
+            
+            # Decidir si usar grounding
+            use_grounding = complexity_score >= self.grounding_threshold['query_complexity']
+            
+            await self.progress_notifier.send_progress(
+                f"Writing section {'with grounding' if use_grounding else 'normally'}: {section.name}"
+            )
+
+            if use_grounding:
+                result = await self.write_section_with_grounding(state)
+                result['method_used'] = 'grounding'
+            else:
+                result = await self.write_section(state)
+                result['method_used'] = 'normal'
+            
+            # Agregar métricas de decisión
+            result['decision_metrics'] = {
+                'complexity_score': complexity_score,
+                'threshold_used': self.grounding_threshold['query_complexity'],
+                'use_grounding': use_grounding
+            }
+            
+            return result
+
+        except Exception as e:
+            await self.progress_notifier.send_progress(
+                "Error in smart section writing", 
+                {"error": str(e)}
+            )
+            raise
+
 # Uso básico con modo verbose
 manager = ResearchManager(verbose=True)
 
@@ -235,3 +357,4 @@ async def main():
         # Las métricas se guardan automáticamente en la base de datos
     except Exception as e:
         logger.error("Research failed", exc_info=True)
+        

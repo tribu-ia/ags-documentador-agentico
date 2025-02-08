@@ -33,6 +33,7 @@ from app.agents.researcher.application.use_cases.write_section import WriteSecti
 from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
 from app.agents.researcher.application.use_cases.manage_research_state import ManageResearchStateUseCase
 from app.agents.researcher.application.use_cases.initialize_research import InitializeResearchUseCase
+from app.agents.researcher.application.use_cases.recover_section_state import RecoverSectionStateUseCase
 
 
 # Configuración avanzada de logging
@@ -71,6 +72,7 @@ class ResearchManager:
             self.settings.tavily_days
         )
         self.section_writer = WriteSectionUseCase(self.language_model)
+        self.section_state_recovery = RecoverSectionStateUseCase(self.repository)
 
     async def generate_queries(self, state: SectionState) -> dict:
         """Generate and validate search queries using multiple engines."""
@@ -282,27 +284,8 @@ class ResearchManager:
             raise
 
     async def recover_state(self, section: Section) -> Optional[Section]:
-        """Attempt to recover research state for a section"""
-        try:
-            state = await self.repository.load_state(section.id)
-            if not state:
-                return None
-                
-            if state["status"] == ResearchStatus.COMPLETED:
-                section["content"] = state["content"]
-                return section
-                
-            # If failed or incomplete, return last known state
-            return Section(
-                id=section.id,
-                name=section.name,
-                description=section.description,
-                content=state.get("content", "")
-            )
-            
-        except Exception as e:
-            logger.error(f"Error recovering state for section {section.id}: {str(e)}")
-            return None
+        """Proxy method for section state recovery"""
+        return await self.section_state_recovery.execute(section)
 
     def cleanup(self):
         """Cleanup method to clear Gemini API caches when done."""

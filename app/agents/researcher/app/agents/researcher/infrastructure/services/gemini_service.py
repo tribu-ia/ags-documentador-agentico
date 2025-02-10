@@ -5,7 +5,6 @@ from app.agents.researcher.domain.interfaces.language_model import LanguageModel
 
 logger = logging.getLogger(__name__)
 
-
 class GeminiService(LanguageModel):
     def __init__(self, api_key: str):
         genai.configure(api_key=api_key)
@@ -32,33 +31,33 @@ class GeminiService(LanguageModel):
             raise
 
     async def generate_grounded_content(
-            self,
-            prompt: str,
-            config: Optional[Dict] = None
+        self, 
+        prompt: str, 
+        config: Optional[Dict] = None
     ) -> Dict[str, any]:
         """Genera contenido usando Google Search Grounding"""
         try:
             generation_config = config or {}
-
+            
             response = await self.model.generate_content_async(
                 contents=prompt,
                 tools=self.grounding_config,
                 generation_config=generation_config
             )
-
+            
             result = {
                 'content': response.text.strip() if response else "",
                 'grounding_metadata': None
             }
-
+            
             # Extraer metadata de grounding si está disponible
             if hasattr(response, 'candidates') and response.candidates:
                 candidate = response.candidates[0]
                 if hasattr(candidate, 'groundingMetadata'):
                     result['grounding_metadata'] = candidate.groundingMetadata
-
+            
             return result
-
+            
         except Exception as e:
             logger.error(f"Error generating grounded content: {str(e)}")
-            raise
+            raise 

@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from enum import Enum
 
+
 class ResearchStatus(Enum):
     NOT_STARTED = "not_started"
     GENERATING_QUERIES = "generating_queries"
@@ -16,6 +17,7 @@ class SearchEngine(Enum):
     GEMINI = "gemini"
     DEEP_RESEARCH = "deep_research"
 
+
 @dataclass
 class Section:
     id: str
@@ -23,9 +25,11 @@ class Section:
     description: str
     content: Optional[str] = None
 
+
 @dataclass
 class SearchQuery:
     search_query: str
+
 
 @dataclass
 class QueryValidation:
@@ -36,6 +40,7 @@ class QueryValidation:
     @property
     def overall_score(self) -> float:
         return (self.specificity + self.relevance + self.clarity) / 3
+
 
 @dataclass
 class MetricsData:
@@ -60,4 +65,4 @@ class MetricsData:
             'tokens_used': self.tokens_used,
             'api_calls': self.api_calls,
             'errors': self.errors
-        } 
+        }

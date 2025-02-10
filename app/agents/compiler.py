@@ -160,7 +160,7 @@ class ReportCompiler:
             # Stream the report generation
             async for chunk in self.primary_llm.astream([
                 SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate the final report with proper formatting and transitions")
+                HumanMessage(content="Generate the final report with proper formatting and transitions in spanish")
             ]):
                 logger.debug(f"Received final report chunk: {chunk.content[:50]}...")
                 content_buffer.append(chunk.content)

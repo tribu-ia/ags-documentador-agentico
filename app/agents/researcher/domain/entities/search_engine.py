@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class SearchEngine(Enum):
     TAVILY = "tavily"
     GEMINI = "gemini"

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict
+from typing import List
 from app.services.tavilyService import tavily_search_async, deduplicate_and_format_sources
 from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
 

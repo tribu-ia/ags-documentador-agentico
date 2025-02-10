@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from .research_status import ResearchStatus
 
+
 class ResearchStateSchema(BaseModel):
     """Schema for validating research state"""
     section_id: str

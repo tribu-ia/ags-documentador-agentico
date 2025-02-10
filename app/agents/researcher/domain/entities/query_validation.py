@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+
 @dataclass
 class QueryValidation:
     """Validation scores for a search query"""

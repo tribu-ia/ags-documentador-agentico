@@ -16,7 +16,6 @@ from functools import lru_cache
 from typing import Optional, Union
 from urllib.parse import urlparse
 
-import httpx
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_google_vertexai import ChatVertexAI

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Optional, List
-from .entities import Section, MetricsData
+
 
 class ResearchRepository(ABC):
     @abstractmethod
@@ -19,7 +19,8 @@ class ResearchRepository(ABC):
     async def save_metrics(self, metrics: Dict) -> None:
         pass
 
+
 class WebSocketNotifier(ABC):
     @abstractmethod
     async def send_progress(self, message: str, data: Optional[Dict] = None) -> None:
-        pass 
+        pass

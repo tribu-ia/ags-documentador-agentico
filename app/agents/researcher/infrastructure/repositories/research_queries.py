@@ -30,4 +30,4 @@ class ResearchQueries:
     INSERT_METRICS = """
         INSERT INTO performance_metrics (metrics_json, timestamp)
         VALUES (?, CURRENT_TIMESTAMP)
-    """ 
+    """

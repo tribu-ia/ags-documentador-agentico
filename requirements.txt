@@ -2,7 +2,7 @@
 colorama
 python-dotenv~=1.0.1
 uvicorn~=0.34.0
-pydantic~=2.9.2
+pydantic~=2.10.6
 fastapi~=0.115.6
 aiokafka
 SQLAlchemy
@@ -19,13 +19,13 @@ langchain-openai~=0.3.0
 langsmith
 motor
 pandas
-starlette
+starlette~=0.45.3
 httpx~=0.28.1
 jobspy
 asyncpg
 langchain_openai
 PyPDF2
-langchain-community
+langchain-community~=0.3.17
 pydantic[email]
 python-multipart
 passlib[bcrypt]
@@ -49,3 +49,6 @@ aiofiles~=24.1.0
 mistune~=3.1.1
 uvicorn[standard]
 websockets
+aiohttp~=3.11.12
+pybreaker~=1.2.0
+logger~=1.4

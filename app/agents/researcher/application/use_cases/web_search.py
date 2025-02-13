@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 class WebSearchUseCase:
     def __init__(self, topic: str, days: int):
+        self.settings = None
         self.topic = topic
         self.days = days
 

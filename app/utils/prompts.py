@@ -1,4 +1,3 @@
-
 # Planning prompts
 REPORT_PLANNER_QUERY_WRITER = """You are an expert technical writer, planning a comprehensive report.
 
@@ -122,7 +121,7 @@ Guidelines for writing:
 - Sources cited at end"""
 
 
-FINAL_SECTION_WRITER="""You are an expert technical writer crafting a section that synthesizes information from the rest of the report.
+FINAL_SECTION_WRITER = """You are an expert technical writer tasked with compiling a comprehensive, professional, and structured report about an AI tool or agent.
 
 Section to write: 
 {section_topic}
@@ -133,28 +132,63 @@ Available report content:
 1. Section-Specific Approach:
 
 For Introduction:
+- Focus on answer initial questions, use the following as a guide
+  - What is the main category of the solution? You should identify whether it is a development tool, platform or a final product
+  - What level of implementation does it have? Here we must differentiate between low, medium or high level
 - Use # for report title (Markdown format)
-- 50-100 word limit
+- up to 400 word limit
 - Write in simple and clear language
 - Focus on the core motivation for the report in 1-2 paragraphs
 - Use a clear narrative arc to introduce the report
 - Include NO structural elements (no lists or tables)
 - No sources section needed
 
+For Body:
+- Focus on answer fundamental questions, use the following as a guide
+  - What does it do? This is intended to clarify the capabilities of the solution
+    - What is the problem statement?
+    - Who is the primary user type?
+    - What are the key capabilities?
+    - What types of input/output does it support?
+    - What is the scope of functionality?
+  - How does it work? Here the focus is on understanding the technical architecture, which leads to the question
+    - What is the core architecture pattern?
+    - How is the agent model organized?
+    - What are the key technical components?
+    - What are the external dependencies?
+    - How does interaction between components occur?
+  - When should you use it? This question asks about practical scenarios
+    - What are the specific use cases?
+    - What technical prerequisites are needed?
+    - What is the operational scale?
+    - What are the unsuitable scenarios?
+    - How does the solution compare to alternatives?
+  - How is it implemented? Examining implementation involves
+    - What is the basic setup process?
+    - What integration methods will be needed?
+    - What are the resource requirements?
+    - What is the estimated implementation timeline?
+    - What type of maintenance will be required?
+  - What makes it unique? Here you need to identify what sets the solution apart in the market
+    - What are the key differentiators?
+    - What competitive advantages do you have?
+    - What is your market position?
+    - How innovative are you really?
+    - What is your future potential?
+  - What is the pricing and evaluation structure? In this section, it is required to establish
+    - What is the pricing and licensing structure?
+    - What are the associated costs?
+    - What is the ultimate business value of the solution?
+
+- Use several sub-sections and mark then with ## for report title (Markdown format)
+- up to 1200 word limit for each sub-section
+- Write in simple and clear language
+- Include NO structural elements (no lists or tables)
+- No sources section needed
+
 For Conclusion/Summary:
 - Use ## for section title (Markdown format)
-- 100-150 word limit
-- For comparative reports:
-    * Must include a focused comparison table using Markdown table syntax
-    * Table should distill insights from the report
-    * Keep table entries clear and concise
-- For non-comparative reports: 
-    * Only use ONE structural element IF it helps distill the points made in the report:
-    * Either a focused table comparing items present in the report (using Markdown table syntax)
-    * Or a short list using proper Markdown list syntax:
-      - Use `*` or `-` for unordered lists
-      - Use `1.` for ordered lists
-      - Ensure proper indentation and spacing
+- up to 400 word limit
 - End with specific next steps or implications
 - No sources section needed
 
@@ -164,48 +198,52 @@ For Conclusion/Summary:
 - Focus on your single most important point
 
 4. Quality Checks:
-- For introduction: 50-100 word limit, # for report title, no structural elements, no sources section
-- For conclusion: 100-150 word limit, ## for section title, only ONE structural element at most, no sources section
+- For introduction: up to 400 word limit, # for report title, no structural elements, no sources section
+- For body: up to 1200 word limit for sub-section, ## for sub-section title, only ONE structural element at most, no sources section
+- For conclusion: up to 400 word limit, ## for section title, only ONE structural element at most, no sources section
 - Markdown format
 - Do not include word count or any preamble in your response"""
 
-FINAL_REPORT_FORMAT = """
- You are an expert technical writer tasked with compiling a comprehensive, professional, and structured report about an AI tool or agent. The report must strictly follow the guidelines and sections below.
+FINAL_REPORT_FORMAT = """You are an expert technical writer. Your task is to write a final report, addressing each specific section one at a time. Ensure the report strictly follows the guidelines and sections below, with a focus on coherence, readability, and grammatical correctness.
 
- ## Report Structure and Guidelines:
+**Important:** 
+- Avoid mentioning ideas or facts that have been previously discussed in the report.
+- For the Introduction and Conclusions sections, write **only one paragraph.** If the information does not contribute to the section, don't write it.
+- Introduction will always be the first section and Conclusions will always be the first section.  
 
- ### **Base Sections (Mandatory for All Agents):**
- {report_organization}
+## Report Structure and Guidelines:  
+### **Base Section (Mandatory for All Agents):**  
+{report_organization}  
 
- ### **Specific Guidelines for Different Agent Types:**
- - For **Frameworks (e.g., LangChain, Haystack, Rasa):**
-     - Detailed installation and dependencies (versions, libraries, recommended environments).
-     - Explanation of internal architecture (e.g., chains, memories, tools).
-     - Reproducible code snippets for running a basic agent.
-     - Steps for integrating with LLMs or external services (e.g., OpenAI, Llama2).
+### **Specific Guidelines for Agent Types:**  
+- For **Frameworks (e.g., LangChain, Haystack, Rasa):**  
+  - Detailed installation process and dependencies (versions, libraries, recommended environments).  
+  - Explanation of internal architecture (e.g., chains, memories, and tools).  
+  - Provide **well-tested examples of reproducible code snippets** to demonstrate usage.  
+  - Include steps for integrating with LLMs or external services (e.g., OpenAI, Llama2).  
+- For **Low-Code/No-Code Platforms (e.g., Zapier with AI, Bubble):**  
+  - Cover onboarding instructions (e.g., creating accounts, activating plugins).  
+  - Specify concrete **limitations or constraints** of the visual environment (what can/cannot be done without coding).  
+  - Outline subscription plans (e.g., Free, Pro) and highlight onboarding differences.  
+- For **Products with Internal Agents (SaaS):**  
+  - Detailed configuration steps for internal AI setups (e.g., prompts or model parameters).  
+  - Examples of functional testing (e.g., internal chatbots, automated analysis).  
 
- - For **Low-Code/No-Code Platforms (e.g., Zapier with AI, Bubble):**
-     - Onboarding instructions for the platform (creating accounts, activating plugins).
-     - Visual workflows with diagrams or screenshots.
-     - Limitations of the visual environment (what can and cannot be done without coding).
-     - A complete practical example of a visual workflow.
-
- - For **Products with Internal Agents (SaaS):**
-     - Subscription plans and onboarding (e.g., Free, Pro).
-     - Configuration options for internal AI (e.g., prompts or model parameters).
-     - Testing key functionalities (e.g., internal chatbots, automated analysis).
-     - Usability and UX evaluation (for non-technical users).
-     - Pricing model and associated costs.
-
- ### **Writing Standards:**
- - **Clarity and Conciseness:** Avoid jargon; use clear, simple explanations.
- - **Markdown Formatting:** Use headings, lists, and bold text for better readability.
- - **Real Examples:** Include reproducible examples, not just theoretical concepts.
- - **Functional Links:** Verify all links are working.
- - **Periodic Updates:** Ensure the documentation remains up-to-date if the tool or process changes.
+### **Writing Standards:**  
+- **Deep Analysis:** Avoid repeated or surface-level statements; dig into functionality, usability, and real implications.  
+- **Objective Evaluation:** Strive for balance when presenting strengths and limitations; underline them clearly.  
+- **Transparency in Missing Data:** Highlight any gaps in provided data and their possible impact on the report.  
+- **Practical Examples:** Emphasize real-world examples, and ensure practicality in the report suggestions.  
+- **Clarity and Conciseness:** Remain clear and professional, avoiding jargon unless critical. Limit to **400 words** for section unless additional length is necessary for technical clarity. Explain briefly if this happens.
 
  ### Provided Context:
  {all_sections}
 
- Now, using the sections and context provided, compile the final report. Ensure the report adheres to the structure and quality standards outlined above, with clear headers and a professional tone.
- """
+**Note:** Ensure the report adheres to these instructions precisely while maintaining a professional tone in Spanish. Maximum length is 400 words per section unless otherwise justified.
+"""
+
+# **Report Section: {section_name}**
+# {section_content}  
+
+# ### Current Partial Report:  
+# {partial_final_report}  

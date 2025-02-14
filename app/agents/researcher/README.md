@@ -52,6 +52,7 @@ Implementaciones de servicios externos:
 - `gemini_service.py`: Integración con Google Gemini AI
 - `progress_notifier.py`: Notificaciones de progreso
 - `prompt_generation_service.py`: Generación de prompts
+- `jina_service.py`: Integración con Jina AI para búsquedas web
 
 ### 📁 presentation/
 Capa de presentación:
@@ -115,13 +116,13 @@ Implementada en `search_web_queries.py` para garantizar robustez en búsquedas w
    - Operaciones default: 20 segundos
 
 3. **Retry Pattern**
-   Para servicio Tavily:
+   Para servicio Jina:
    - Máximo 3 intentos
    - Backoff exponencial
    - Reintentos específicos para errores de conexión
 
 4. **Fallback Services**
    Servicios de búsqueda en cascada:
-   - Tavily (principal)
+   - Jina (principal)
    - SERP API (primer respaldo)
    - DuckDuckGo (segundo respaldo)

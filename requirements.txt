@@ -37,7 +37,7 @@ langchain_anthropic
 langchain_google_vertexai
 langchain_core
 google-generativeai
-google-generativeai tavily-python
+google-generativeai
 langchain-core~=0.3.30
 protobuf~=5.29.3
 jsonschema~=4.23.0
@@ -52,3 +52,4 @@ websockets
 aiohttp~=3.11.12
 pybreaker~=1.2.0
 logger~=1.4
+duckduckgo-search>=4.1.0

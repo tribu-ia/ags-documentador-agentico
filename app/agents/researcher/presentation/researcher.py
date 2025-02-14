@@ -78,8 +78,7 @@ class ResearchManager:
             self.settings.number_of_queries
         )
         self.web_searcher = WebSearchUseCase(
-            self.settings.tavily_topic,
-            self.settings.tavily_days
+            self.settings.jina_api_key
         )
         self.search_web_queries = SearchWebQueriesUseCase(
             web_searcher=self.web_searcher,

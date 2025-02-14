@@ -1,22 +1,15 @@
 import asyncio
 from dataclasses import dataclass
 from functools import partial
-from typing import Dict, List
+from typing import Dict
 import logging
-
 import aiohttp
-from pybreaker import CircuitBreaker
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log
-)
+from duckduckgo_search import DDGS
 
 from app.utils.state import SectionState
 from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
 from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
+from app.config.config import get_settings
 
 # Configuración del logger
 logger = logging.getLogger(__name__)
@@ -25,15 +18,15 @@ class SearchWebQueriesUseCase:
     def __init__(self, web_searcher: WebSearchUseCase, progress_notifier: ProgressNotifier):
         self.web_searcher = web_searcher
         self.progress_notifier = progress_notifier
-        self.settings = web_searcher.settings  # Access settings through web_searcher
+        self.settings = get_settings()  # Obtenemos settings directamente
 
         
         # Configuraciones de resiliencia
         self.search_semaphore = asyncio.Semaphore(3)
         self.timeout_config = {'search': 30, 'default': 20}
         self.fallback_services = [
-            self._search_with_tavily, # API de Búsqueda Web principal
-            self._search_with_serp, # API de Búsqueda Web primer Respaldo
+            self._search_with_jina,     # API de Búsqueda Web principal (Jina)
+            self._search_with_serp,     # API de Búsqueda Web primer Respaldo
             self._search_with_duckduckgo # API de Búsqueda Web Segundo Respaldo
         ]
 
@@ -77,9 +70,9 @@ class SearchWebQueriesUseCase:
             )
             raise
 
-    async def _search_with_tavily(self, query: str) -> str:
-        """Búsqueda principal usando Tavily"""
-        return await self.web_searcher.search(query)
+    async def _search_with_jina(self, query: str) -> str:
+        """Búsqueda principal usando Jina"""
+        return await self.web_searcher.search([query])
 
     async def _search_with_serp(self, query: str) -> str:
         """Servicio de búsqueda alternativo usando SERP API"""
@@ -106,10 +99,13 @@ class SearchWebQueriesUseCase:
     async def _search_with_duckduckgo(self, query: str) -> str:
         """Servicio de búsqueda alternativo usando DuckDuckGo"""
         try:
-            from duckduckgo_search import AsyncDDGS
-            
-            ddgs = AsyncDDGS()
-            results = await ddgs.text(query, max_results=10)
+            ddgs = DDGS()
+            results = ddgs.text(
+                query, 
+                region='wt-wt',
+                safesearch='off',
+                max_results=10
+            )
             
             return "\n".join(
                 f"{result.get('title', '')}\n{result.get('body', '')}"

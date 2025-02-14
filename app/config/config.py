@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, fields
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 import os
+from pydantic import Field
 
 # Cargar las variables del archivo .env
 load_dotenv()
@@ -102,6 +103,8 @@ class Settings(BaseSettings):
     number_of_queries: int = 3
     tavily_topic: str = "general"
     tavily_days: Optional[int] = 7
+    jina_api_key: str = Field(..., env='JINA_API_KEY')
+    serp_api_key: str = Field(..., env='SERP_API_KEY')  # Para el servicio de fallback
 
     class Config:
         env_file = ".env"

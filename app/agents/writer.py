@@ -50,7 +50,7 @@ class ReportWriter:
         self.llm_manager = LLMManager(llm_config)
 
         # Get primary LLM for report writing - using Claude for high-quality content generation
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
 
     async def send_progress(self, message: str, data: dict = None):
         """Send progress updates through websocket"""

@@ -26,7 +26,9 @@ async def lifespan(app: FastAPI):
 # Crear la aplicación FastAPI con lifespan
 app = FastAPI(
     title="Research API",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Aquí defines el prefijo base para todas las rutas
+    root_path="/api/agents-documentador"
 )
 
 # Configurar CORS

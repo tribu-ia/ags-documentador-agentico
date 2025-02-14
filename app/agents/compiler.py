@@ -32,7 +32,7 @@ class ReportCompiler:
             max_tokens=4000  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
 
     def format_sections(self, sections: List[Section]) -> str:
         """Format a list of sections into a structured string.
@@ -160,7 +160,8 @@ class ReportCompiler:
             # Stream the report generation
             async for chunk in self.primary_llm.astream([
                 SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate the final report with proper formatting and transitions in spanish")
+                HumanMessage(content="Generate the final report with proper formatting and transitions in spanish"
+                                     "JUST THE REPORT ANY ADDITIONAL")
             ]):
                 logger.debug(f"Received final report chunk: {chunk.content[:50]}...")
                 content_buffer.append(chunk.content)

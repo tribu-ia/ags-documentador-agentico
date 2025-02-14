@@ -28,6 +28,7 @@ class WebSocketManager:
         """Maneja el proceso de investigación usando el grafo de LangGraph"""
         try:
             title = data.get("title", "")
+            assignmentId = data.get("assignmentId", "")
             description = data.get("description", "")
             if not title:
                 raise ValueError("El campo 'title' es requerido")

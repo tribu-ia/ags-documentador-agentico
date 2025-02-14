@@ -31,7 +31,7 @@ class ReportPlanner:
             max_tokens=2000
         )
         self.llm_manager = LLMManager(llm_config)
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
 
     async def send_progress(self, message: str, data: dict = None):
         """Send progress updates through websocket"""

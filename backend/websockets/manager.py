@@ -1,13 +1,15 @@
-from typing import List, Dict, Any
-from fastapi import WebSocket
-import logging
 import asyncio
+import logging
 from datetime import datetime
+from typing import Any, Dict, List
+
+from fastapi import WebSocket
 
 from app.graph.report_graph import report_graph
 from app.utils.state import ReportState
 
 logger = logging.getLogger(__name__)
+
 
 class WebSocketManager:
     def __init__(self):
@@ -32,20 +34,19 @@ class WebSocketManager:
         """Stream del progreso de investigación y escritura"""
         try:
             build = report_graph.compile()
-            
+
             async for update in build.astream(state):
-                await websocket.send_json({
-                    "type": "progress",
-                    "timestamp": datetime.now().isoformat(),
-                    "data": update
-                })
+                await websocket.send_json(
+                    {
+                        "type": "progress",
+                        "timestamp": datetime.now().isoformat(),
+                        "data": update,
+                    }
+                )
 
         except Exception as e:
             logger.error(f"Error en streaming: {str(e)}", exc_info=True)
-            await websocket.send_json({
-                "type": "error",
-                "data": {"error": str(e)}
-            })
+            await websocket.send_json({"type": "error", "data": {"error": str(e)}})
             raise
 
     async def start_research(self, websocket: WebSocket, data: Dict[str, Any]):
@@ -53,15 +54,14 @@ class WebSocketManager:
         try:
             # Crear estado inicial
             state = ReportState(
+                assignment_id=data["assignment_id"],
                 topic=data["topic"],
                 section_id=data.get("section_id"),
-                description=data.get("description")
+                description=data.get("description"),
             )
 
             # Crear y registrar tarea
-            task = asyncio.create_task(
-                self.stream_research_progress(websocket, state)
-            )
+            task = asyncio.create_task(self.stream_research_progress(websocket, state))
             self.research_tasks[state.section_id] = task
 
             # Esperar resultado
@@ -69,7 +69,4 @@ class WebSocketManager:
 
         except Exception as e:
             logger.error(f"Error iniciando investigación: {str(e)}", exc_info=True)
-            await websocket.send_json({
-                "type": "error",
-                "data": {"error": str(e)}
-            }) 
+            await websocket.send_json({"type": "error", "data": {"error": str(e)}})

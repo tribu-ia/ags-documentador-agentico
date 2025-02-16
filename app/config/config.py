@@ -1,10 +1,11 @@
+import os
+from dataclasses import dataclass, fields
 from functools import lru_cache
-from typing import Optional, Any
-from pydantic_settings import BaseSettings
-from dataclasses import dataclass, field, fields
+from typing import Any, Optional
+
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
-import os
+from pydantic_settings import BaseSettings
 
 # Cargar las variables del archivo .env
 load_dotenv()
@@ -13,13 +14,14 @@ load_dotenv()
 @dataclass(kw_only=True)
 class LangGraphConfig:
     """Configuración específica para LangGraph"""
+
     number_of_queries: int = 2
     tavily_topic: str = "general"
     tavily_days: str = None
 
     @classmethod
     def from_runnable_config(
-            cls, config: Optional[RunnableConfig] = None
+        cls, config: Optional[RunnableConfig] = None
     ) -> "LangGraphConfig":
         """Crear configuración desde RunnableConfig de LangGraph"""
         configurable = (
@@ -362,6 +364,9 @@ Este marco asegura un análisis consistente de soluciones basadas en agentes. S�
     number_of_queries: int = 3
     tavily_topic: str = "general"
     tavily_days: Optional[int] = 7
+
+    # LOCAL ENDPOINTS
+    store_mardown_endpoint: str
 
     class Config:
         env_file = ".env"

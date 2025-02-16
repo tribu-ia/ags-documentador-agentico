@@ -1,12 +1,14 @@
+import json
+import logging
 from typing import List
 
-from langchain_core.messages import SystemMessage, HumanMessage
+import requests
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config.config import get_settings
 from app.utils.llms import LLMConfig, LLMManager, LLMType
-from app.utils.prompts import FINAL_SECTION_WRITER, FINAL_REPORT_FORMAT
-from app.utils.state import ReportState, Section, SectionState
-import logging
+from app.utils.prompts import FINAL_REPORT_FORMAT, FINAL_SECTION_WRITER
+from app.utils.state import Section
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -29,7 +31,7 @@ class ReportCompiler:
         llm_config = LLMConfig(
             temperature=0.0,  # Use deterministic output for compilation
             streaming=True,
-            max_tokens=4000  # Larger context for final compilation
+            max_tokens=4000,  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
         self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
@@ -46,27 +48,40 @@ class ReportCompiler:
         formatted_str = ""
         for idx, section in enumerate(sections, 1):
             formatted_str += f"""
-                            {'=' * 60}
+                            {"=" * 60}
                             Section {idx}: {section.name}
-                            {'=' * 60}
+                            {"=" * 60}
                             Description:
                             {section.description}
                             Requires Research: 
                             {section.research}
                             
                             Content:
-                            {section.content if section.content else '[Not yet written]'}
+                            {section.content if section.content else "[Not yet written]"}
                             """
         return formatted_str
+
+    async def save_final_report(self, url, assignment_id, final_report):
+        payload = {"assignmentId": assignment_id, "markdownContent": final_report}
+        json_payload = json.dumps(payload)
+
+        headers = {"Content-Type": "application/json"}
+
+        response = requests.post(url, headers=headers, data=json_payload)
+
+        if response.status_code == 200:
+            logger.debug("Report saved successfully!")
+        else:
+            logger.error(
+                f"Request failed with status code: {str(response.status_code)}\nError content: {response.text}"
+            )
 
     async def send_progress(self, message: str, data: dict = None):
         """Send progress updates through websocket"""
         if self.websocket:
-            await self.websocket.send_json({
-                "type": "compiler_progress",
-                "message": message,
-                "data": data
-            })
+            await self.websocket.send_json(
+                {"type": "compiler_progress", "message": message, "data": data}
+            )
 
     async def gather_completed_sections(self, state: dict) -> dict:
         """Gather and format completed sections for context."""
@@ -78,7 +93,7 @@ class ReportCompiler:
             # Retornar estado completo actualizado
             return {
                 **state,  # Mantener estado existente
-                "report_sections_from_research": formatted_sections
+                "report_sections_from_research": formatted_sections,
             }
 
         except Exception as e:
@@ -90,22 +105,26 @@ class ReportCompiler:
         try:
             section = state["section"]
             context = state.get("report_sections_from_research", "")
-            
+
             await self.send_progress(f"Writing final section: {section.name}")
 
             system_instructions = FINAL_SECTION_WRITER.format(
                 section_title=section.name,
                 section_topic=section.description,
-                context=context
+                context=context,
             )
 
-            section_content = await self.primary_llm.ainvoke([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate a report section based on the provided sources.")
-            ])
+            section_content = await self.primary_llm.ainvoke(
+                [
+                    SystemMessage(content=system_instructions),
+                    HumanMessage(
+                        content="Generate a report section based on the provided sources."
+                    ),
+                ]
+            )
 
             section.content = section_content.content
-            
+
             # Solo retornar los campos que necesitamos actualizar
             return {
                 "completed_sections": state.get("completed_sections", []) + [section]
@@ -151,39 +170,53 @@ class ReportCompiler:
             # Generate final report with streaming
             system_instructions = FINAL_REPORT_FORMAT.format(
                 all_sections=all_sections,
-                report_organization=self.settings.report_structure
+                report_organization=self.settings.report_structure,
             )
 
             content_buffer = []
             logger.debug("Starting final report streaming generation")
-            
+
             # Stream the report generation
-            async for chunk in self.primary_llm.astream([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate the final report with proper formatting and transitions in spanish"
-                                     "JUST THE REPORT ANY ADDITIONAL")
-            ]):
+            async for chunk in self.primary_llm.astream(
+                [
+                    SystemMessage(content=system_instructions),
+                    HumanMessage(
+                        content="Generate the final report with proper formatting and transitions in spanish"
+                    ),
+                ]
+            ):
                 logger.debug(f"Received final report chunk: {chunk.content[:50]}...")
                 content_buffer.append(chunk.content)
-                
+
                 # Enviar el chunk al websocket
-                await self.send_progress("final_report_chunk", {
-                    "type": "report_content",
-                    "content": chunk.content,
-                    "is_complete": False
-                })
+                await self.send_progress(
+                    "final_report_chunk",
+                    {
+                        "type": "report_content",
+                        "content": chunk.content,
+                        "is_complete": False,
+                    },
+                )
 
             # Unir todo el contenido
             final_report = "".join(content_buffer)
-            
+
             # Enviar mensaje de completado
-            await self.send_progress("final_report_complete", {
-                "type": "report_content",
-                "content": final_report,
-                "is_complete": True
-            })
+            await self.send_progress(
+                "final_report_complete",
+                {
+                    "type": "report_content",
+                    "content": final_report,
+                    "is_complete": True,
+                },
+            )
 
             logger.debug("Final report compilation completed")
+            await self.save_final_report(
+                self.settings.store_mardown_endpoint,
+                state["assignment_id"],
+                final_report,
+            )
             return {"final_report": final_report}
 
         except Exception as e:

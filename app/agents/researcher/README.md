@@ -52,6 +52,7 @@ Implementaciones de servicios externos:
 - `gemini_service.py`: Integración con Google Gemini AI
 - `progress_notifier.py`: Notificaciones de progreso
 - `prompt_generation_service.py`: Generación de prompts
+- `jina_service.py`: Integración con Jina AI para búsquedas web
 
 ### 📁 presentation/
 Capa de presentación:
@@ -98,3 +99,30 @@ Capa de presentación:
 - Repository Pattern
 - Use Case Pattern
 - SOLID Principles 
+
+## Patrones de Resiliencia Implementados
+
+### 🛡️ Configuración de Resiliencia
+Implementada en `search_web_queries.py` para garantizar robustez en búsquedas web:
+
+1. **Bulkhead Pattern**
+   - Control de concurrencia mediante `asyncio.Semaphore(3)`
+   - Limita búsquedas web simultáneas
+   - Previene sobrecarga del sistema
+
+2. **Timeout Pattern**
+   Configuraciones temporales:
+   - Búsqueda web: 30 segundos
+   - Operaciones default: 20 segundos
+
+3. **Retry Pattern**
+   Para servicio Jina:
+   - Máximo 3 intentos
+   - Backoff exponencial
+   - Reintentos específicos para errores de conexión
+
+4. **Fallback Services**
+   Servicios de búsqueda en cascada:
+   - Jina (principal)
+   - SERP API (primer respaldo)
+   - DuckDuckGo (segundo respaldo)

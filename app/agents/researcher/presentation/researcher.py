@@ -69,12 +69,11 @@ class ResearchManager:
             self.settings.number_of_queries
         )
         self.web_searcher = WebSearchUseCase(
-            self.settings.tavily_topic,
-            self.settings.tavily_days
+            self.settings.jina_api_key
         )
         self.search_web_queries = SearchWebQueriesUseCase(
-            self.web_searcher,
-            self.progress_notifier
+            web_searcher=self.web_searcher,
+            progress_notifier=self.progress_notifier
         )
         self.section_writer = WriteSectionUseCase(self.language_model)
         self.section_state_recovery = RecoverSectionStateUseCase(self.repository)

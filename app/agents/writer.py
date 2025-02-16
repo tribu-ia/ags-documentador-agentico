@@ -121,7 +121,6 @@ class ReportWriter:
             })
 
         except Exception as e:
-            logger.error(f"Error during report writing: {str(e)}")
             await self.send_progress("error", {"error": str(e)})
             raise
 
@@ -147,4 +146,5 @@ class ReportWriter:
     def cleanup(self):
         """Cleanup method to clear LLM caches when done."""
         self.llm_manager.clear_caches()
+
 

@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     tavily_days: Optional[int] = 7
     jina_api_key: str = Field(..., env='JINA_API_KEY')
     serp_api_key: str = Field(..., env='SERP_API_KEY')  # Para el servicio de fallback
-
+    store_mardown_endpoint: str = Field(..., env='STORE_MARDOWN_ENDPOINT')
     class Config:
         env_file = ".env"
 

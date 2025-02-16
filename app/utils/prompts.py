@@ -1,4 +1,4 @@
-# Planning prompts
+# Planning prompts NQ
 REPORT_PLANNER_QUERY_WRITER = """Eres un escritor técnico experto, planificando un documento integral.
 
 El documento se centrará en: {topic}

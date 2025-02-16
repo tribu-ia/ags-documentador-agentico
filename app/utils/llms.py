@@ -16,7 +16,6 @@ from functools import lru_cache
 from typing import Optional, Union
 from urllib.parse import urlparse
 
-import httpx
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_google_vertexai import ChatVertexAI
@@ -36,11 +35,12 @@ class LLMType(str, Enum):
     AZURE_OPENAI = "azure-gpt-4o"
     ANTHROPIC_CLAUDE = "claude-3-5-sonnet-20240620"
     GEMINI = "gemini-2.0-flash-exp"
+    DEEPSEEK_3 = "deepseek-v3"
 
     @classmethod
     def get_default(cls) -> "LLMType":
         """Get the default LLM type"""
-        return cls.GPT_4O_MINI
+        return cls.DEEPSEEK_3
 
 
 class LLMConfig(BaseModel):
@@ -162,6 +162,32 @@ class LLMManager:
             logger.error(f"Failed to initialize Google Vertex AI LLM: {str(e)}")
             raise
 
+    @lru_cache(maxsize=1)
+    def get_deepseek_llm(self, model) -> ChatOpenAI:
+        """
+        Get a Google Vertex AI instance with caching
+
+        Returns:
+            ChatVertexAI instance
+
+        Raises:
+            Exception: For initialization errors
+        """
+        try:
+            return ChatOpenAI(
+                model=model,
+                temperature=self.config.temperature,
+                streaming=self.config.streaming,
+                max_tokens=self.config.max_tokens,
+                base_url="https://paid-ddc.xiolabs.xyz/v1",
+                api_key="ddc-paid-0b55da993e1940e481d870f170111e87",
+                callback_manager=self._callback_manager
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Google Vertex AI LLM: {str(e)}")
+            raise
+
     def get_llm(self, llm_type: LLMType) -> Union[ChatOpenAI, AzureChatOpenAI, ChatAnthropic, ChatVertexAI]:
         """
         Get an LLM instance based on the specified type
@@ -187,6 +213,8 @@ class LLMManager:
                 return self.get_anthropic_llm()
             elif llm_type == LLMType.GEMINI:
                 return self.get_google_llm()
+            elif llm_type == LLMType.DEEPSEEK_3:
+                return self.get_deepseek_llm(model="gpt-4o")
             else:
                 raise ValueError(f"Unknown LLM type: {llm_type}")
 

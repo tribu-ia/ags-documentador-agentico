@@ -1,5 +1,6 @@
-# dependencies
-colorama
+
+uvicorn[standard]~=0.34.0
+typing_extensions~=4.12.2
 python-dotenv~=1.0.1
 uvicorn~=0.34.0
 pydantic~=2.10.6
@@ -32,10 +33,7 @@ passlib[bcrypt]
 langgraph~=0.2.64
 pypdf
 tavily-python
-pydantic-settings~=2.7.1
-langchain_anthropic
-langchain_google_vertexai
-langchain_core
+pydantic-settings
 google-generativeai
 google-generativeai
 langchain-core~=0.3.30

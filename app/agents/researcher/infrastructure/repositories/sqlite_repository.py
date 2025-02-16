@@ -7,6 +7,7 @@ from .research_queries import ResearchQueries
 
 logger = logging.getLogger(__name__)
 
+
 class SQLiteResearchRepository(ResearchRepository):
     def __init__(self, db_path: str = "research_state.db"):
         """Initialize SQLite repository"""
@@ -27,3 +28,4 @@ class SQLiteResearchRepository(ResearchRepository):
                 conn.execute(ResearchQueries.INSERT_METRICS, (str(metrics),))
         except Exception as e:
             logger.error(f"Error saving metrics: {str(e)}") 
+

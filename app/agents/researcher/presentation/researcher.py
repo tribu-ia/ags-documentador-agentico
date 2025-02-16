@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 
-from typing import List, Dict, Set, Optional, Protocol
-import google.generativeai as genai
 import hashlib
+import logging
 import re
-from dataclasses import dataclass, asdict
-import asyncio
+from typing import List, Optional
 
-from starlette.websockets import WebSocket
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -15,30 +12,24 @@ from tenacity import (
     retry_if_exception_type,
     before_sleep_log
 )
-import logging
-import time
 
-from app.config.config import get_settings
-from app.utils.state import SectionState, Section
-from app.agents.researcher.domain.entities.query_validation import QueryValidation
-from app.agents.researcher.domain.entities.research_status import ResearchStatus
-from app.agents.researcher.domain.repositories.research_repository import ResearchRepository
-from app.agents.researcher.infrastructure.repositories.sqlite_repository import SQLiteResearchRepository
-from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
-from app.agents.researcher.application.use_cases.validate_query import ValidateQueryUseCase
-from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
-from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
-from app.agents.researcher.application.use_cases.write_section import WriteSectionUseCase
-from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
-from app.agents.researcher.application.use_cases.manage_research_state import ManageResearchStateUseCase
+from app.agents.researcher.application.use_cases.generate_initial_queries import GenerateInitialQueriesUseCase
+from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
 from app.agents.researcher.application.use_cases.initialize_research import InitializeResearchUseCase
+from app.agents.researcher.application.use_cases.manage_research_state import ManageResearchStateUseCase
 from app.agents.researcher.application.use_cases.recover_section_state import RecoverSectionStateUseCase
 from app.agents.researcher.application.use_cases.research_section import ResearchSectionUseCase
-from app.agents.researcher.infrastructure.services.prompt_generation_service import PromptGenerationService
-from app.agents.researcher.application.use_cases.generate_queries import GenerateQueriesUseCase
-from app.agents.researcher.application.use_cases.generate_initial_queries import GenerateInitialQueriesUseCase
 from app.agents.researcher.application.use_cases.search_web_queries import SearchWebQueriesUseCase
-
+from app.agents.researcher.application.use_cases.validate_query import ValidateQueryUseCase
+from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
+from app.agents.researcher.application.use_cases.write_section import WriteSectionUseCase
+from app.agents.researcher.domain.entities.query_validation import QueryValidation
+from app.agents.researcher.infrastructure.repositories.sqlite_repository import SQLiteResearchRepository
+from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
+from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
+from app.agents.researcher.infrastructure.services.prompt_generation_service import PromptGenerationService
+from app.config.config import get_settings
+from app.utils.state import SectionState, Section
 
 # Configuración avanzada de logging
 logging.basicConfig(

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 import time
 
+
 @dataclass
 class MetricsData:
     """Structure to store performance metrics"""
@@ -28,4 +29,4 @@ class MetricsData:
             'tokens_used': self.tokens_used,
             'api_calls': self.api_calls,
             'errors': self.errors
-        } 
+        }

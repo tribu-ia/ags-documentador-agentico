@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from datetime import datetime
 import logging
 
@@ -27,7 +26,9 @@ async def lifespan(app: FastAPI):
 # Crear la aplicación FastAPI con lifespan
 app = FastAPI(
     title="Research API",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Aquí defines el prefijo base para todas las rutas
+    root_path="/api/agents-documentador"
 )
 
 # Configurar CORS

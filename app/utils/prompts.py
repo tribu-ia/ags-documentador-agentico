@@ -1,5 +1,5 @@
 
-# Planning prompts
+# Planning prompts 170225
 REPORT_PLANNER_QUERY_WRITER = """You are an expert technical writer, planning a comprehensive report.
 
 The report will focus on: {topic}

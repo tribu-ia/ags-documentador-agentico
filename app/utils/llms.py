@@ -34,7 +34,7 @@ class LLMType(str, Enum):
     GPT_4O = "gpt-4o"
     AZURE_OPENAI = "azure-gpt-4o"
     ANTHROPIC_CLAUDE = "claude-3-5-sonnet-20240620"
-    GEMINI = "gemini-2.0-flash-exp"
+    GEMINI = "gemini-2.0-flash-lite-preview-02-05"
     DEEPSEEK_3 = "deepseek-v3"
 
     @classmethod

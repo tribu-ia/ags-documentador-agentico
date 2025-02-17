@@ -1,39 +1,42 @@
+# Planning prompts NQ
+REPORT_PLANNER_QUERY_WRITER = """Eres un escritor técnico experto, planificando un documento integral.
 
-# Planning prompts
-REPORT_PLANNER_QUERY_WRITER = """You are an expert technical writer, planning a comprehensive report.
+El documento se centrará en: {topic}
 
-The report will focus on: {topic}
-
-The report structure should follow:
+La estructura del documento debe seguir:
 {report_organization}
 
-Generate {number_of_queries} search queries that will help gather comprehensive information for planning the report sections.
+Genera {number_of_queries} consultas de búsqueda que ayudarán a recopilar información completa para planificar las secciones del documento.
 
-Each query should:
-1. Be specific to the topic
-2. Help fulfill the report structure requirements
-3. Target authoritative sources
-4. Include technical terms where appropriate
+Cada consulta debe:
+1. Ser específica al tema
+2. Ayudar a cumplir con los requisitos de estructura del documento
+3. Dirigirse a fuentes autorizadas
+4. Incluir términos técnicos cuando sea apropiado
 
-Make the query specific enough to find high-quality, relevant sources while covering the breadth needed for the report structure."""
+La consulta debe ser lo suficientemente específica para encontrar fuentes relevantes de alta calidad mientras cubre la amplitud necesaria para la estructura del documento.
 
-REPORT_PLANNER_INSTRUCTIONS = """You are an expert technical writer creating a report outline.
+IMPORTANTE: Todo el contenido debe estar en ESPAÑOL."""
 
-Topic: {topic}
+REPORT_PLANNER_INSTRUCTIONS = """Eres un escritor técnico experto creando un esquema de documento.
 
-Report Organization: 
+Tema: {topic}
+
+Organización del Documento: 
 {report_organization}
 
-Use this context to inform the section planning:
+Utiliza este contexto para informar la planificación de secciones:
 {context}
 
-For each section, provide:
-1. Name - Clear section title
-2. Description - Overview of topics covered
-3. Research - Whether web research is needed (true/false)
-4. Content - Leave blank for now
+Para cada sección, proporciona:
+1. Nombre - Título claro de la sección
+2. Descripción - Resumen de temas cubiertos
+3. Investigación - Si se necesita investigación web (verdadero/falso)
+4. Contenido - Dejar en blanco por ahora
 
-Consider which sections require web research. For example, introduction and conclusion will not require research because they will distill information from other parts of the report."""
+Considera qué secciones requieren investigación web. Por ejemplo, la introducción y conclusión no requerirán investigación porque sintetizarán información de otras partes del documento.
+
+IMPORTANTE: Todo el contenido debe estar en ESPAÑOL."""
 
 # Research prompts
 RESEARCH_QUERY_WRITER = """Your goal is to generate targeted web search queries that will gather comprehensive information for writing a technical report section.
@@ -70,56 +73,50 @@ Your queries should be:
 # Available source material:
 # {context}"""
 
-SECTION_WRITER = """You are an expert technical writer crafting one section of a technical report.
+SECTION_WRITER = """Eres un escritor técnico experto elaborando una sección de un documento técnico.
 
-Topic for this section:
+Tema para esta sección:
 {section_topic}
 
-Guidelines for writing:
+Pautas para escribir:
 
-1. Technical Accuracy:
-- Include specific version numbers
-- Reference concrete metrics/benchmarks
-- Cite official documentation
-- Use technical terminology precisely
+1. Precisión Técnica:
+- Incluir números de versión específicos
+- Referenciar métricas/comparativas concretas
+- Citar documentación oficial
+- Usar terminología técnica con precisión
 
-2. Length and Style:
-- Strict 150-200 word limit
-- No marketing language
-- Technical focus
-- Write in simple, clear language
-- Start with your most important insight in **bold**
-- Use short paragraphs (2-3 sentences max)
+2. Extensión y Estilo:
+- Sin lenguaje de marketing
+- Enfoque técnico
+- Escribir en lenguaje claro y simple
+- Comenzar con tu insight más importante en **negrita**
 
-3. Structure:
-- Use ## for section title (Markdown format)
-- Only use ONE structural element IF it helps clarify your point:
-  * Either a focused table comparing 2-3 key items (using Markdown table syntax)
-  * Or a short list (3-5 items) using proper Markdown list syntax:
-    - Use `*` or `-` for unordered lists
-    - Use `1.` for ordered lists
-    - Ensure proper indentation and spacing
-- End with ### Sources that references the below source material formatted as:
-  * List each source with title, date, and URL
-  * Format: `- Title : URL`
+3. Estructura:
+- Usar ## para título de sección (formato Markdown)
+- Asegurar indentación y espaciado apropiado
+- Terminar con ### Fuentes que referencia el material fuente siguiente formateado como:
+  * Listar cada fuente con título, fecha y URL
+  * Formato: `- Título : URL`
 
-3. Writing Approach:
-- Include at least one specific example or case study
-- Use concrete details over general statements
-- Make every word count
-- No preamble prior to creating the section content
-- Focus on your single most important point
+4. Enfoque de Escritura:
+- Incluir al menos un ejemplo específico o caso de estudio
+- Usar detalles concretos en lugar de declaraciones generales
+- Hacer que cada palabra cuente
+- Sin preámbulos antes de crear el contenido de la sección
+- Enfocarse en tu punto más importante
 
-4. Use this source material to help write the section:
+5. Material fuente para ayudar a escribir la sección:
 {context}
 
-5. Quality Checks:
-- Exactly 150-200 words (excluding title and sources)
-- Careful use of only ONE structural element (table or list) and only if it helps clarify your point
-- One specific example / case study
-- Starts with bold insight
-- No preamble prior to creating the section content
-- Sources cited at end"""
+6. Verificaciones de Calidad:
+- Uso cuidadoso de UN SOLO elemento estructural (tabla o lista) y solo si ayuda a clarificar tu punto
+- Un ejemplo específico / caso de estudio
+- Comienza con insight en negrita
+- Sin preámbulos antes de crear el contenido de la sección
+- Fuentes citadas al final
+
+IMPORTANTE: Todo el contenido debe estar en ESPAÑOL."""
 
 
 FINAL_SECTION_WRITER="""You are an expert technical writer crafting a section that synthesizes information from the rest of the report.
@@ -134,7 +131,6 @@ Available report content:
 
 For Introduction:
 - Use # for report title (Markdown format)
-- 50-100 word limit
 - Write in simple and clear language
 - Focus on the core motivation for the report in 1-2 paragraphs
 - Use a clear narrative arc to introduce the report
@@ -143,7 +139,6 @@ For Introduction:
 
 For Conclusion/Summary:
 - Use ## for section title (Markdown format)
-- 100-150 word limit
 - For comparative reports:
     * Must include a focused comparison table using Markdown table syntax
     * Table should distill insights from the report
@@ -164,48 +159,49 @@ For Conclusion/Summary:
 - Focus on your single most important point
 
 4. Quality Checks:
-- For introduction: 50-100 word limit, # for report title, no structural elements, no sources section
-- For conclusion: 100-150 word limit, ## for section title, only ONE structural element at most, no sources section
+
+- For conclusion:, ## for section title, only ONE structural element at most, no sources section
 - Markdown format
 - Do not include word count or any preamble in your response"""
 
 FINAL_REPORT_FORMAT = """
- You are an expert technical writer tasked with compiling a comprehensive, professional, and structured report about an AI tool or agent. The report must strictly follow the guidelines and sections below.
+Eres un escritor técnico experto encargado de compilar un documento integral, profesional y estructurado sobre una herramienta o agente de IA. El documento debe seguir estrictamente las pautas y secciones a continuación.
 
- ## Report Structure and Guidelines:
+## Estructura del Documento y Pautas:
 
- ### **Base Sections (Mandatory for All Agents):**
- {report_organization}
+### **Secciones Base (Obligatorias para Todos los Agentes):**
+{report_organization}
 
- ### **Specific Guidelines for Different Agent Types:**
- - For **Frameworks (e.g., LangChain, Haystack, Rasa):**
-     - Detailed installation and dependencies (versions, libraries, recommended environments).
-     - Explanation of internal architecture (e.g., chains, memories, tools).
-     - Reproducible code snippets for running a basic agent.
-     - Steps for integrating with LLMs or external services (e.g., OpenAI, Llama2).
+### **Pautas Específicas para Diferentes Tipos de Agentes:**
+- Para **Frameworks (ej., LangChain, Haystack, Rasa):**
+    - Instalación detallada y dependencias (versiones, bibliotecas, entornos recomendados)
+    - Explicación de arquitectura interna (ej., cadenas, memorias, herramientas)
+    - Fragmentos de código reproducibles para ejecutar un agente básico
+    - Pasos para integración con LLMs o servicios externos (ej., OpenAI, Llama2)
 
- - For **Low-Code/No-Code Platforms (e.g., Zapier with AI, Bubble):**
-     - Onboarding instructions for the platform (creating accounts, activating plugins).
-     - Visual workflows with diagrams or screenshots.
-     - Limitations of the visual environment (what can and cannot be done without coding).
-     - A complete practical example of a visual workflow.
+- Para **Plataformas Low-Code/No-Code (ej., Zapier con IA, Bubble):**
+    - Instrucciones de incorporación a la plataforma (crear cuentas, activar plugins)
+    - Flujos de trabajo visuales con diagramas o capturas de pantalla
+    - Limitaciones del entorno visual (qué se puede y no se puede hacer sin programar)
+    - Un ejemplo práctico completo de un flujo de trabajo visual
 
- - For **Products with Internal Agents (SaaS):**
-     - Subscription plans and onboarding (e.g., Free, Pro).
-     - Configuration options for internal AI (e.g., prompts or model parameters).
-     - Testing key functionalities (e.g., internal chatbots, automated analysis).
-     - Usability and UX evaluation (for non-technical users).
-     - Pricing model and associated costs.
+- Para **Productos con Agentes Internos (SaaS):**
+    - Planes de suscripción e incorporación (ej., Gratuito, Pro)
+    - Opciones de configuración para IA interna (ej., prompts o parámetros del modelo)
+    - Prueba de funcionalidades clave (ej., chatbots internos, análisis automatizado)
+    - Evaluación de usabilidad y UX (para usuarios no técnicos)
+    - Modelo de precios y costos asociados
 
- ### **Writing Standards:**
- - **Clarity and Conciseness:** Avoid jargon; use clear, simple explanations.
- - **Markdown Formatting:** Use headings, lists, and bold text for better readability.
- - **Real Examples:** Include reproducible examples, not just theoretical concepts.
- - **Functional Links:** Verify all links are working.
- - **Periodic Updates:** Ensure the documentation remains up-to-date if the tool or process changes.
+### **Estándares de Escritura:**
+- **Claridad y Concisión:** Evitar jerga; usar explicaciones claras y simples
+- **Formato Markdown:** Usar encabezados, listas y texto en negrita para mejor legibilidad
+- **Ejemplos Reales:** Incluir ejemplos reproducibles, no solo conceptos teóricos
+- **Enlaces Funcionales:** Verificar que todos los enlaces funcionen
+- **Actualizaciones Periódicas:** Asegurar que la documentación se mantenga actualizada si la herramienta o proceso cambia
 
- ### Provided Context:
- {all_sections}
+### Contexto Proporcionado:
+{all_sections}
 
- Now, using the sections and context provided, compile the final report. Ensure the report adheres to the structure and quality standards outlined above, with clear headers and a professional tone.
- """
+Ahora, usando las secciones y el contexto proporcionado, compila el documento final. Asegúrate de que el documento se adhiera a la estructura y estándares de calidad descritos anteriormente, con encabezados claros y un tono profesional.
+
+IMPORTANTE: Todo el contenido debe estar en ESPAÑOL."""

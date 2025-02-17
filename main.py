@@ -1,40 +1,73 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
+import logging
 
-from app.graph.report_graph import build_report_graph
 from app.utils.state import ReportState
+from backend.server.websocket_manager import WebSocketManager
 
-app = FastAPI()
-report_graph = build_report_graph()
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Crear instancia del WebSocket Manager
+websocket_manager = WebSocketManager()
 
-class ReportRequest(BaseModel):
-    topic: str
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan manager for FastAPI application"""
+    # Startup
+    logger.info("Aplicación iniciando...")
+    yield
+    # Shutdown
+    logger.info("Aplicación finalizando...")
 
+# Crear la aplicación FastAPI con lifespan
+app = FastAPI(
+    title="Research API",
+    lifespan=lifespan,
+    # Aquí defines el prefijo base para todas las rutas
+    root_path="/api/agents-documentador"
+)
+
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    return {"message": "Research API is running"}
 
 @app.get("/health")
 async def health_check():
     return {
         "status": "ok",
         "version": "1.0.0",
-        "langsmith_enabled": True
+        "timestamp": datetime.now().isoformat()
     }
 
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """Endpoint WebSocket para investigación en tiempo real"""
+    logger.info("Nueva conexión WebSocket intentando conectar")
+    await websocket_manager.connect(websocket)
+    try:
+        logger.info("WebSocket conectado exitosamente")
+        while True:
+            data = await websocket.receive_json()
+            logger.info(f"Mensaje recibido: {data}")
+            await websocket_manager.handle_message(websocket, data)
+    except WebSocketDisconnect:
+        logger.info("WebSocket desconectado normalmente")
+        await websocket_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Error en WebSocket: {str(e)}", exc_info=True)
+        if websocket in websocket_manager.active_connections:
+            await websocket_manager.disconnect(websocket)
 
-@app.post("/generate_report")
-async def generate_report(request: dict):
-    topic = request.get("topic", "")
-    if not topic:
-        raise HTTPException(status_code=400, detail="The 'topic' field is required.")
-
-    state = ReportState(topic=topic)
-    build = report_graph.compile()
-    result = await build.ainvoke(state)  # Cambiar a invoke si el grafo no es asíncrono
-    return {"report": result}
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    # Ejecuta la aplicación
-    uvicorn.run(app, host="0.0.0.0", port=8098, workers=2)

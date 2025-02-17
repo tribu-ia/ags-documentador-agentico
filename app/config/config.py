@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, fields
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 import os
+from pydantic import Field
 
 # Cargar las variables del archivo .env
 load_dotenv()
@@ -36,6 +37,7 @@ class LangGraphConfig:
 class Settings(BaseSettings):
     tavily_api_key: str
     openai_api_key: str
+    google_api_key: str
     anthropic_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
     # Azure OpenAI Settings
@@ -45,6 +47,7 @@ class Settings(BaseSettings):
     azure_openai_deployment_name: Optional[str] = None
     # LLM Configuration
     default_llm_type: str = "gpt-4o-mini"
+    GPT_4O_MINI: str = "gpt-4o-mini"
     default_temperature: float = 0
     # Monitoring Configuration
     langchain_project: str
@@ -94,12 +97,15 @@ class Settings(BaseSettings):
 10. References and Resources:
     - Official documentation.
     - Links to external tutorials, forums, and communities.
+    
 """
 
     number_of_queries: int = 3
     tavily_topic: str = "general"
     tavily_days: Optional[int] = 7
-
+    jina_api_key: str = Field(..., env='JINA_API_KEY')
+    serp_api_key: str = Field(..., env='SERP_API_KEY')  # Para el servicio de fallback
+    store_mardown_endpoint: str = Field(..., env='STORE_MARDOWN_ENDPOINT')
     class Config:
         env_file = ".env"
 

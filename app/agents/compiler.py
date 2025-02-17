@@ -1,8 +1,12 @@
+from typing import List
+import asyncio
+import re
+
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.config.config import get_settings
-from app.providers.llm import LLMType, get_llm
-from app.utils.prompts import FINAL_SECTION_WRITER
+from app.utils.llms import LLMConfig, LLMManager, LLMType
+from app.utils.prompts import FINAL_SECTION_WRITER, FINAL_REPORT_FORMAT
 from app.utils.state import ReportState, Section, SectionState
 import logging
 
@@ -10,193 +14,229 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-def compile_report(state: ReportState):
-    # Ensure all sections are properly compiled
-    # compiled_content = f"# Final Report: {state.topic}\n\n"
-    # for section in state.sections:
-    #     compiled_content += f"## {section.name}\n{section.content if section.content else 'Content not available'}\n\n"
-    # state.final_report = compiled_content
-    sections = state["sections"]
-    completed_sections = {s.name: s.content for s in state["completed_sections"]}
-    # Update sections with completed content while maintaining original order
-    for section in sections:
-        section.content = completed_sections[section.name]
+class ReportCompiler:
+    """Class responsible for compiling and formatting the final report."""
 
-        # Compile final report
-    all_sections = "\n\n".join([s.content for s in sections])
+    def __init__(self, settings=None, websocket=None):
+        """Initialize ReportCompiler with configuration settings.
 
-    return {"final_report": all_sections}
+        Args:
+            settings: Optional application settings. If None, will load default settings.
+            websocket: Optional websocket for streaming updates.
+        """
+        self.settings = settings or get_settings()
+        self.websocket = websocket
+        self.sources = set()  # Nuevo: Para almacenar las fuentes únicas
 
+        # Initialize LLM manager with compilation-specific configuration
+        llm_config = LLMConfig(
+            temperature=0.7,  # Use deterministic output for compilation
+            streaming=True,
+            max_tokens=8192  # Larger context for final compilation
+        )
+        self.llm_manager = LLMManager(llm_config)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
 
-def gather_completed_sections(state: ReportState):
-    """ Gather completed sections from research and format them as context for writing the final sections """
+    def format_sections(self, sections: List[Section]) -> str:
+        """Format a list of sections into a structured string.
 
-    # List of completed sections
-    completed_sections = state["completed_sections"]
+        Args:
+            sections: List of sections to format
 
-    # Format completed section to str to use as context for final sections
-    completed_report_sections = format_sections(completed_sections)
+        Returns:
+            str: Formatted string representation of sections
+        """
+        formatted_str = ""
+        for idx, section in enumerate(sections, 1):
+            formatted_str += f"""
+                            {'=' * 60}
+                            Section {idx}: {section.name}
+                            {'=' * 60}
+                            Description:
+                            {section.description}
+                            Requires Research: 
+                            {section.research}
+                            
+                            Content:
+                            {section.content if section.content else '[Not yet written]'}
+                            """
+        return formatted_str
 
-    return {"report_sections_from_research": completed_report_sections}
+    async def send_progress(self, message: str, data: dict = None):
+        """Send progress updates through websocket"""
+        if self.websocket:
+            await self.websocket.send_json({
+                "type": "compiler_progress",
+                "message": message,
+                "data": data
+            })
 
+    async def gather_completed_sections(self, state: dict) -> dict:
+        """Gather and format completed sections for context."""
+        try:
+            await self.send_progress("Gathering completed sections")
+            completed_sections = state.get("completed_sections", [])
+            formatted_sections = self.format_sections(completed_sections)
 
-def format_sections(sections: list[Section]) -> str:
-    """ Format a list of sections into a string """
-    formatted_str = ""
-    for idx, section in enumerate(sections, 1):
-        formatted_str += f"""
-{'=' * 60}
-Section {idx}: {section.name}
-{'=' * 60}
-Description:
-{section.description}
-Requires Research: 
-{section.research}
+            # Retornar estado completo actualizado
+            return {
+                **state,  # Mantener estado existente
+                "report_sections_from_research": formatted_sections
+            }
 
-Content:
-{section.content if section.content else '[Not yet written]'}
+        except Exception as e:
+            await self.send_progress("Error gathering sections", {"error": str(e)})
+            raise
 
-"""
-    return formatted_str
+    async def write_final_sections(self, state: dict) -> dict:
+        """Write final sections using completed research as context."""
+        try:
+            section = state["section"]
+            context = state.get("report_sections_from_research", "")
+            
+            # Extraer y almacenar URLs del contexto
+            urls = re.findall(r'URL: (https?://\S+)', context)
+            self.sources.update(urls)
+            
+            await self.send_progress(f"Writing final section: {section.name}")
 
+            system_instructions = FINAL_SECTION_WRITER.format(
+                section_title=section.name,
+                section_topic=section.description,
+                context=context
+            )
 
-def write_final_sections(state: SectionState):
-    """ Write final sections of the report, which do not require web search and use the completed sections as context """
+            section_content = await self.primary_llm.ainvoke([
+                SystemMessage(content=system_instructions),
+                HumanMessage(content="Generate a report section based on the provided sources.")
+            ])
 
-    # Get state
-    section = state["section"]
-    completed_report_sections = state["report_sections_from_research"]
+            section.content = section_content.content
+            
+            # Solo retornar los campos que necesitamos actualizar
+            return {
+                "completed_sections": state.get("completed_sections", []) + [section]
+            }
 
-    # Format system instructions
-    system_instructions = FINAL_SECTION_WRITER.format(section_title=section.name,
-                                                      section_topic=section.description,
-                                                      context=completed_report_sections)
-    settings = get_settings()
-    # Get LLM instance based on configuration
-    try:
-        llm_type = LLMType(settings.default_llm_type)
-        llm = get_llm(llm_type)
-    except ValueError as e:
-        logger.warning(f"Invalid LLM type in configuration, falling back to GPT-4o-mini: {e}")
-        llm = get_llm(LLMType.GPT_4O_MINI)
-    # Generate section
-    section_content = llm.invoke([SystemMessage(content=system_instructions)] + [
-        HumanMessage(content="Generate a report section based on the provided sources.")])
+        except Exception as e:
+            await self.send_progress("Error writing section", {"error": str(e)})
+            raise
 
-    # Write content to section
-    section.content = section_content.content
+    def compile_sections(self, state: dict) -> dict:
+        """Compile all sections into a unified structure."""
+        try:
+            logger.debug("Compiling sections")
+            sections = state["sections"]  # Acceder como diccionario
+            completed_sections = {
+                s.name: s.content
+                for s in state["completed_sections"]  # Acceder como diccionario
+            }
 
-    # Write the updated section to completed sections
-    return {"completed_sections": [section]}
+            # Update sections while maintaining order
+            for section in sections:
+                section.content = completed_sections[section.name]
 
+            # Agregar sección de referencias
+            references_section = "\n\nReferences:\n"
+            for idx, source in enumerate(sorted(self.sources), 1):
+                references_section += f"[{idx}] {source}\n"
 
-def compile_final_report(state: ReportState):
-    """ Compile the final report """
+            # Join sections
+            all_sections = "\n\n".join([s.content for s in sections]) + references_section
 
-    # Get sections
-    sections = state["sections"]
-    completed_sections = {s.name: s.content for s in state["completed_sections"]}
+            return {"final_report": all_sections}
 
-    # Update sections with completed content while maintaining original order
-    for section in sections:
-        section.content = completed_sections[section.name]
+        except Exception as e:
+            logger.error(f"Error compiling sections: {str(e)}")
+            raise
 
-    # Compile final report
-    all_sections = "\n\n".join([s.content for s in sections])
-    # Prompt para estructurar el reporte final
-    final_report_prompt = f"""
-    You are an expert technical writer tasked with compiling a comprehensive, professional, and structured report about an AI tool or agent. The report must strictly follow the guidelines and sections below.
+    async def compile_final_report(self, state: dict) -> dict:
+        """Generate the final formatted report."""
+        try:
+            logger.debug("Starting final report compilation")
+            await self.send_progress("Compiling final report")
 
-    ## Report Structure and Guidelines:
+            # First compile all sections
+            compiled_sections = self.compile_sections(state)
+            all_sections = compiled_sections["final_report"]
 
-    ### **Base Sections (Mandatory for All Agents):**
-    1. **Introduction:**
-        - Brief description of the agent: What it is and its purpose.
-        - Provide links to official documentation or the product's website.
-        - Context on why this agent was chosen.
+            # Asegurarse de que report_organization tenga un valor por defecto
+            report_organization = {
+                "introduction": "1. Introducción",
+                "body": "2. Desarrollo",
+                "conclusion": "3. Conclusión",
+                #"references": "4. Referencias"
+            }
+            
+            # Instrucciones más específicas con límite de palabras
+            system_instructions = """
+            Eres un editor experto encargado de formatear un informe técnico.
+            
+            Tu tarea es tomar las siguientes secciones y organizarlas en un documento cohesivo,
+            manteniendo el contenido esencial de cada sección. El informe final no debe exceder las 32,000 palabras.
+            
+            Estructura del documento:
+            {report_organization}
+            
+            Contenido de las secciones:
+            {all_sections}
+            
+            Instrucciones específicas:
+            0. Todo el contenido debe ser en ESPAÑOL 
+            1. Mantén la información más relevante de cada sección
+            2. Asegúrate de que los títulos de las secciones sean claros y consistentes
+            3. Mejora las transiciones entre secciones
+            4. Mantén el formato Markdown existente sin agregar etiquetas de INICIO o FIN Solo el CONTENIDO
+            5. Prioriza mantener la información técnica y ejemplos importantes
+            6. Asegúrate de que el informe esté completo y bien estructurado
+            7. No excedas el límite de 32,000 palabras
+            """
 
-    2. **Research/Testing Objectives:**
-        - What was expected to be learned or validated with this agent?
-        - Scope and specific goals.
+            logger.debug("Starting to stream final report")
+            content_buffer = []
+            
+            # Configurar el modelo para manejar respuestas más largas
+            async for chunk in self.primary_llm.astream([
+                SystemMessage(content=system_instructions.format(
+                    report_organization=report_organization,
+                    all_sections=all_sections
+                )),
+                HumanMessage(content="Formatea las secciones del informe en un documento cohesivo y completo, respetando el límite de palabras.")
+            ], max_tokens=12000):  # Aumentamos el límite de tokens de salida
+                if hasattr(chunk, "content"):
+                    content_buffer.append(chunk.content)
+                    await self.send_progress("final_report_chunk", {
+                        "type": "report_content",
+                        "content": chunk.content,
+                        "is_complete": False
+                    })
 
-    3. **Key Features:**
-        - Main functionalities of the agent.
-        - Types of problems it solves.
-        - Integrations with other tools or APIs.
+            # Combinar todo el contenido del LLM
+            llm_content = "".join(content_buffer)
 
-    4. **Prerequisites:**
-        - Required languages, libraries, accounts, or subscriptions.
-        - Recommended technical knowledge.
+            # Agregar la sección de referencias al final
+            references_section = "\n\n## Referencias\n"
+            for idx, source in enumerate(sorted(self.sources), 1):
+                references_section += f"[{idx}] {source}\n"
 
-    5. **Installation/Initial Setup:**
-        - Step-by-step instructions with exact commands.
-        - Include environment variables, API keys, and account access details.
+            # Combinar el contenido del LLM con las referencias
+            final_content = llm_content + references_section
 
-    6. **Practical Examples/Use Cases:**
-        - A simple, reproducible case with clear instructions.
-        - Include code snippets, screenshots, or diagrams (if applicable).
+            # Enviar el reporte completo
+            await self.send_progress("final_report_complete", {
+                "type": "report_content",
+                "content": final_content,
+                "is_complete": True
+            })
 
-    7. **Advantages and Limitations:**
-        - Strengths (e.g., ease of use, performance, scalability).
-        - Weaknesses (e.g., complexity, technical limitations, costs).
+            logger.debug("Final report streaming completed")
+            return {"final_report": final_content}
 
-    8. **Lessons Learned and Best Practices:**
-        - Tips for using the tool effectively.
-        - Challenges encountered and how they were overcome.
+        except Exception as e:
+            logger.error(f"Error streaming report: {str(e)}")
+            await self.send_progress("error", {"error": str(e)})
+            raise
 
-    9. **Next Steps/Future Development:**
-        - Ideas for extending the tool, new use cases, or possible improvements.
-
-    10. **References and Resources:**
-        - Official documentation and functional links.
-        - External tutorials, forums, or communities.
-
-    ### **Specific Guidelines for Different Agent Types:**
-    - For **Frameworks (e.g., LangChain, Haystack, Rasa):**
-        - Detailed installation and dependencies (versions, libraries, recommended environments).
-        - Explanation of internal architecture (e.g., chains, memories, tools).
-        - Reproducible code snippets for running a basic agent.
-        - Steps for integrating with LLMs or external services (e.g., OpenAI, Llama2).
-
-    - For **Low-Code/No-Code Platforms (e.g., Zapier with AI, Bubble):**
-        - Onboarding instructions for the platform (creating accounts, activating plugins).
-        - Visual workflows with diagrams or screenshots.
-        - Limitations of the visual environment (what can and cannot be done without coding).
-        - A complete practical example of a visual workflow.
-
-    - For **Products with Internal Agents (SaaS):**
-        - Subscription plans and onboarding (e.g., Free, Pro).
-        - Configuration options for internal AI (e.g., prompts or model parameters).
-        - Testing key functionalities (e.g., internal chatbots, automated analysis).
-        - Usability and UX evaluation (for non-technical users).
-        - Pricing model and associated costs.
-
-    ### **Writing Standards:**
-    - **Clarity and Conciseness:** Avoid jargon; use clear, simple explanations.
-    - **Markdown Formatting:** Use headings, lists, and bold text for better readability.
-    - **Real Examples:** Include reproducible examples, not just theoretical concepts.
-    - **Functional Links:** Verify all links are working.
-    - **Periodic Updates:** Ensure the documentation remains up-to-date if the tool or process changes.
-
-    ### Provided Context:
-    {all_sections}
-
-    Now, using the sections and context provided, compile the final report. Ensure the report adheres to the structure and quality standards outlined above, with clear headers and a professional tone.
-    """
-
-    settings = get_settings()
-    # Get LLM instance based on configuration
-    try:
-        llm_type = LLMType(settings.default_llm_type)
-        llm = get_llm(llm_type)
-    except ValueError as e:
-        logger.warning(f"Invalid LLM type in configuration, falling back to GPT-4o-mini: {e}")
-        llm = get_llm(LLMType.GPT_4O_MINI)
-    # Generar el reporte final usando el modelo
-    final_report = llm.invoke(
-        [
-            SystemMessage(content="Generate a structured report."),
-            HumanMessage(content=final_report_prompt),
-        ]
-    )
-    return {"final_report": final_report.content}
+    def cleanup(self):
+        """Cleanup method to clear LLM caches when done."""
+        self.llm_manager.clear_caches()

@@ -30,12 +30,12 @@ class ReportCompiler:
 
         # Initialize LLM manager with compilation-specific configuration
         llm_config = LLMConfig(
-            temperature=0.0,  # Use deterministic output for compilation
+            temperature=0.7,  # Use deterministic output for compilation
             streaming=True,
-            max_tokens=4000  # Larger context for final compilation
+            max_tokens=8192  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
 
     def format_sections(self, sections: List[Section]) -> str:
         """Format a list of sections into a structured string.
@@ -165,7 +165,7 @@ class ReportCompiler:
                 "introduction": "1. Introducción",
                 "body": "2. Desarrollo",
                 "conclusion": "3. Conclusión",
-                "references": "4. Referencias"
+                #"references": "4. Referencias"
             }
             
             # Instrucciones más específicas con límite de palabras
@@ -182,10 +182,11 @@ class ReportCompiler:
             {all_sections}
             
             Instrucciones específicas:
+            0. Todo el contenido debe ser en ESPAÑOL 
             1. Mantén la información más relevante de cada sección
             2. Asegúrate de que los títulos de las secciones sean claros y consistentes
             3. Mejora las transiciones entre secciones
-            4. Mantén el formato Markdown existente
+            4. Mantén el formato Markdown existente sin agregar etiquetas de INICIO o FIN Solo el CONTENIDO
             5. Prioriza mantener la información técnica y ejemplos importantes
             6. Asegúrate de que el informe esté completo y bien estructurado
             7. No excedas el límite de 32,000 palabras
@@ -204,7 +205,7 @@ class ReportCompiler:
             ], max_tokens=12000):  # Aumentamos el límite de tokens de salida
                 if hasattr(chunk, "content"):
                     content_buffer.append(chunk.content)
-                    await self.send_progress("report_content", {
+                    await self.send_progress("final_report_chunk", {
                         "type": "report_content",
                         "content": chunk.content,
                         "is_complete": False

@@ -35,7 +35,7 @@ class WebSocketManager:
                 raise ValueError("El campo 'title' es requerido")
 
             # Construir el topic combinando título y descripción
-            topic = f"Research task: {title}\nContext: {description}"
+            topic = f"Tarea de Investigación: {title}\nContexto: {description}"
 
             # Crear estado inicial completo
             state = {
@@ -54,7 +54,7 @@ class WebSocketManager:
             await websocket.send_json(
                 {
                     "type": "research_start",
-                    "message": "Starting research process",
+                    "message": "Iniciando proceso de Investigación.",
                     "data": {"title": title, "status": "started"},
                 }
             )
@@ -74,7 +74,7 @@ class WebSocketManager:
             await websocket.send_json(
                 {
                     "type": "research_complete",
-                    "message": "Research completed successfully",
+                    "message": "Investigación finalizada satisfactoriamente.",
                     "data": {"title": title, "status": "completed"},
                 }
             )

@@ -42,7 +42,7 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "Research API is running"}
+    return {"message": "Research API se está ejecutando"}
 
 @app.get("/health")
 async def health_check():

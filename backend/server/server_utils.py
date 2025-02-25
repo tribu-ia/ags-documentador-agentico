@@ -64,7 +64,7 @@ class CustomLogsHandler:
         # Save updated log file
         with open(self.log_file, 'w') as f:
             json.dump(log_data, f, indent=2)
-        logger.debug(f"Log entry written to: {self.log_file}")
+        logger.debug(f"Log guardado en: {self.log_file}")
 
 
 class Researcher:
@@ -123,7 +123,7 @@ async def handle_start_command(websocket, data: str, manager):
         json_data)
 
     if not task or not report_type:
-        print("Error: Missing task or report_type")
+        print("Error: task o report_type Faltante")
         return
 
     # Create logs handler with websocket and task
@@ -153,12 +153,12 @@ async def handle_start_command(websocket, data: str, manager):
 
 async def handle_human_feedback(data: str):
     feedback_data = json.loads(data[14:])  # Remove "human_feedback" prefix
-    print(f"Received human feedback: {feedback_data}")
+    print(f"Feedback de usuario recibido: {feedback_data}")
     # TODO: Add logic to forward the feedback to the appropriate agent or update the research state
 
 async def handle_chat(websocket, data: str, manager):
     json_data = json.loads(data[4:])
-    print(f"Received chat message: {json_data.get('message')}")
+    print(f"Mensaje de chat recibido: {json_data.get('message')}")
     await manager.chat(json_data.get("message"), websocket)
 
 async def generate_report_files(report: str, filename: str) -> Dict[str, str]:
@@ -204,7 +204,7 @@ async def handle_file_upload(file, DOC_PATH: str) -> Dict[str, str]:
     file_path = os.path.join(DOC_PATH, os.path.basename(file.filename))
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    print(f"File uploaded to {file_path}")
+    print(f"Archivo cargado en {file_path}")
 
     document_loader = DocumentLoader(DOC_PATH)
     await document_loader.load()
@@ -216,20 +216,20 @@ async def handle_file_deletion(filename: str, DOC_PATH: str) -> JSONResponse:
     file_path = os.path.join(DOC_PATH, os.path.basename(filename))
     if os.path.exists(file_path):
         os.remove(file_path)
-        print(f"File deleted: {file_path}")
-        return JSONResponse(content={"message": "File deleted successfully"})
+        print(f"Archivo eliminado: {file_path}")
+        return JSONResponse(content={"message": "Archivo eliminado satisfactoriamente"})
     else:
-        print(f"File not found: {file_path}")
-        return JSONResponse(status_code=404, content={"message": "File not found"})
+        print(f"Archivo no encontrado: {file_path}")
+        return JSONResponse(status_code=404, content={"message": "Archivo no encontrado"})
 
 
 async def execute_multi_agents(manager) -> Any:
     websocket = manager.active_connections[0] if manager.active_connections else None
     if websocket:
-        report = await run_research_task("Is AI in a hype cycle?", websocket, stream_output)
+        report = await run_research_task("La IA está en un ciclo exagerado?", websocket, stream_output)
         return {"report": report}
     else:
-        return JSONResponse(status_code=400, content={"message": "No active WebSocket connection"})
+        return JSONResponse(status_code=400, content={"message": "No hay conexiones de WebSocket activas"})
 
 
 async def handle_websocket_communication(websocket, manager):
@@ -242,7 +242,7 @@ async def handle_websocket_communication(websocket, manager):
         elif data.startswith("chat"):
             await handle_chat(websocket, data, manager)
         else:
-            print("Error: Unknown command or not enough parameters provided.")
+            print("Error: Comando desconocido o no se proporcionaron los parámetros suficientes.")
 
 
 def extract_command_data(json_data: Dict) -> tuple:

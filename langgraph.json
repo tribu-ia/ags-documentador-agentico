@@ -1,0 +1,12 @@
+{
+    "dependencies": ["."],
+    "graphs": {
+        "report": "./app/graph/report_graph.py:report_graph"
+    },
+    "python_version": "3.11",
+    "env": ".env",
+    "dockerfile_lines": [
+        "RUN apt-get update && apt-get install -y gcc libpq-dev python3-dev",
+        "RUN pip install psycopg2"
+    ]
+}

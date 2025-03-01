@@ -7,7 +7,7 @@ class QueryValidation:
     specificity: float
     relevance: float
     clarity: float
-    
+
     @property
     def overall_score(self) -> float:
-        return (self.specificity + self.relevance + self.clarity) / 3 
+        return (self.specificity + self.relevance + self.clarity) / 3

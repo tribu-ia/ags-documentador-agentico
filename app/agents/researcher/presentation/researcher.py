@@ -45,26 +45,26 @@ logger = logging.getLogger(__name__)
 
 class ResearchManager:
     def __init__(
-        self, 
-        settings=None, 
-        repository=None, 
-        verbose=False, 
-        websocket=None
+            self,
+            settings=None,
+            repository=None,
+            verbose=False,
+            websocket=None
     ):
         self.settings = settings or get_settings()
         self.repository = repository or SQLiteResearchRepository()
-        
+
         # Inicializar servicios y casos de uso
         self.progress_notifier = ProgressNotifier(websocket, verbose)
-        
+
         # Configurar Vertex AI antes de inicializar GeminiService
         import vertexai
         vertexai.init(project="724849631127")
-        
+
         self.language_model = GeminiService(self.settings.google_api_key)
         self.state_manager = ManageResearchStateUseCase(self.repository)
         self.initializer = InitializeResearchUseCase()
-        
+
         self.prompt_generator = PromptGenerationService(self.language_model)
         self.query_validator = ValidateQueryUseCase()
         self.generate_queries_use_case = GenerateQueriesUseCase(
@@ -88,13 +88,13 @@ class ResearchManager:
             self.progress_notifier
         )
         self.generate_initial_queries = GenerateInitialQueriesUseCase(self.language_model)
-        
+
         # Configuración para determinar el uso de grounding
         self.grounding_threshold = {
             'relevance_score': 0.7,  # Umbral para decidir usar grounding
-            'query_complexity': 0.6   # Umbral de complejidad de la consulta
+            'query_complexity': 0.6  # Umbral de complejidad de la consulta
         }
-        
+
         # Configuración para grounding
         self.grounding_config = {
             'temperature': 0.7,
@@ -107,13 +107,13 @@ class ResearchManager:
         """Generate and validate search queries using multiple engines with smart selection."""
         try:
             section = state["section"]
-            
+
             # Evaluar complejidad de la sección para determinar el método
             complexity_score = await self._evaluate_search_complexity(
                 section.name,
                 section.description
             )
-            
+
             await self.progress_notifier.send_progress(
                 f"Generating queries for section: {section.name}"
             )
@@ -147,7 +147,7 @@ class ResearchManager:
 
         except Exception as e:
             await self.progress_notifier.send_progress(
-                "Error generating queries", 
+                "Error generating queries",
                 {"error": str(e)}
             )
             logger.error(f"Error generating queries: {str(e)}")
@@ -162,14 +162,14 @@ class ResearchManager:
         try:
             section = state["section"]
             source_str = state["source_str"]
-            
+
             await self.progress_notifier.send_progress(f"Writing section: {section.name}")
 
             section_content = await self.section_writer.write(section, source_str)
-            
+
             if section_content:
                 setattr(section, "content", section_content)
-                
+
                 logger.debug(f"Completed writing section: {section.name}")
                 await self.progress_notifier.send_progress("Section completed", {
                     "section_name": section.name
@@ -185,20 +185,20 @@ class ResearchManager:
         try:
             section = state["section"]
             source_str = state["source_str"]
-            
+
             await self.progress_notifier.send_progress(f"Writing section with grounding: {section.name}")
 
             grounded_result = await self.section_writer.write_with_grounding(
-                section, 
-                source_str, 
+                section,
+                source_str,
                 self.grounding_config
             )
-            
+
             if grounded_result['content']:
                 setattr(section, "content", grounded_result['content'])
                 if grounded_result.get('grounding_metadata'):
                     setattr(section, "grounding_metadata", grounded_result['grounding_metadata'])
-                
+
                 logger.debug(f"Completed writing section with grounding: {section.name}")
                 await self.progress_notifier.send_progress("Section completed", {
                     "section_name": section.name,
@@ -211,7 +211,7 @@ class ResearchManager:
 
         except Exception as e:
             await self.progress_notifier.send_progress(
-                "Error writing section with grounding", 
+                "Error writing section with grounding",
                 {"error": str(e)}
             )
             raise
@@ -235,9 +235,9 @@ class ResearchManager:
         try:
             # Simplified validation logic
             specificity = 0.8  # Default high specificity
-            relevance = 0.8   # Default high relevance
-            clarity = 0.8     # Default high clarity
-            
+            relevance = 0.8  # Default high relevance
+            clarity = 0.8  # Default high clarity
+
             return QueryValidation(
                 specificity=specificity,
                 relevance=relevance,
@@ -255,7 +255,7 @@ class ResearchManager:
     async def generate_initial_queries(self, state: SectionState) -> List[str]:
         """Generate initial queries using language model with retry logic."""
         return await self.generate_initial_queries.execute(
-            state, 
+            state,
             self.settings.number_of_queries
         )
 
@@ -278,23 +278,23 @@ class ResearchManager:
             Evalúa la complejidad y necesidad de información actualizada para esta búsqueda:
             Query: {query}
             Contexto: {context}
-            
+
             Responde con un número entre 0 y 1, donde:
             - 0-0.5: Consulta simple o información general
             - 0.6-1.0: Consulta compleja o necesita información actualizada
             """
-            
+
             response = await self.language_model.generate_content(
                 evaluation_prompt,
                 {'temperature': 0.1}  # Baja temperatura para respuestas más consistentes
             )
-            
+
             try:
                 score = float(response.strip())
                 return min(max(score, 0.0), 1.0)  # Asegurar que esté entre 0 y 1
             except ValueError:
                 return 0.5  # Valor por defecto si no se puede convertir
-                
+
         except Exception as e:
             logger.warning(f"Error evaluating search complexity: {str(e)}")
             return 0.5  # Valor por defecto en caso de error
@@ -304,16 +304,16 @@ class ResearchManager:
         try:
             section = state["section"]
             source_str = state["source_str"]
-            
+
             # Evaluar complejidad de la búsqueda
             complexity_score = await self._evaluate_search_complexity(
-                section.name, 
+                section.name,
                 section.description
             )
-            
+
             # Decidir si usar grounding
             use_grounding = complexity_score >= self.grounding_threshold['query_complexity']
-            
+
             await self.progress_notifier.send_progress(
                 f"Writing section {'with grounding' if use_grounding else 'normally'}: {section.name}"
             )
@@ -324,25 +324,27 @@ class ResearchManager:
             else:
                 result = await self.write_section(state)
                 result['method_used'] = 'normal'
-            
+
             # Agregar métricas de decisión
             result['decision_metrics'] = {
                 'complexity_score': complexity_score,
                 'threshold_used': self.grounding_threshold['query_complexity'],
                 'use_grounding': use_grounding
             }
-            
+
             return result
 
         except Exception as e:
             await self.progress_notifier.send_progress(
-                "Error in smart section writing", 
+                "Error in smart section writing",
                 {"error": str(e)}
             )
             raise
 
+
 # Uso básico con modo verbose
 manager = ResearchManager(verbose=True)
+
 
 # Acceso a métricas
 async def main():
@@ -352,4 +354,3 @@ async def main():
         # Las métricas se guardan automáticamente en la base de datos
     except Exception as e:
         logger.error("Research failed", exc_info=True)
-        

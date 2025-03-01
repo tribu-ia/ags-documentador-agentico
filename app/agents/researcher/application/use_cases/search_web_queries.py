@@ -27,9 +27,9 @@ class SearchWebQueriesUseCase:
     def __init__(self, web_searcher: WebSearchUseCase, progress_notifier: ProgressNotifier):
         self.web_searcher = web_searcher
         self.progress_notifier = progress_notifier
-        self.settings = get_settings()  # Obtenemos settings directamente
-
-        # Inicializar GeminiService
+        self.settings = get_settings()
+        
+        # Inicializar GeminiService para búsquedas avanzadas
         self.gemini_service = GeminiService(self.settings.google_api_key)
 
         # Configuraciones de resiliencia
@@ -72,17 +72,30 @@ class SearchWebQueriesUseCase:
             source_str = ""
             for query in query_list:
                 try:
-                    result = await self.provider_manager.search(query)
+                    # Usar Gemini para queries complejas
+                    if complexity_score >= 0.7:
+                        result = await self._search_with_gemini_grounding(query)
+                    else:
+                        result = await self._search_with_gemini_flash(query)
+                        
                     if result:
                         source_str += f"\n{result}"
                         continue
-
-                    # Si el nuevo sistema falla, usar el sistema de fallback original
-                    logger.debug("Provider manager failed, falling back to original system")
-                    fallback_result = await self._execute_fallback_search(query)
-                    if fallback_result:
-                        source_str += f"\n{fallback_result}"
                         
+                    # Fallback al sistema original si Gemini falla
+                    for search_service in self.fallback_services:
+                        try:
+                            result = await self._execute_with_bulkhead(
+                                partial(self._search_with_timeout, search_service),
+                                query
+                            )
+                            if result:
+                                source_str += f"\n{result}"
+                                break
+                        except Exception as e:
+                            logger.error(f"Search service failed: {str(e)}")
+                            continue
+                            
                 except Exception as e:
                     logger.error(f"Search failed for query {query}: {str(e)}")
                     continue
@@ -97,28 +110,39 @@ class SearchWebQueriesUseCase:
             )
             raise
 
-    async def _execute_fallback_search(self, query: str) -> str:
-        """Execute search using original fallback system"""
-        search_success = False
-        result = ""
-        
-        for search_service in self.fallback_services:
-            try:
-                result = await self._execute_with_bulkhead(
-                    partial(self._search_with_timeout, search_service),
-                    query
-                )
-                if result:
-                    search_success = True
-                    break
-            except Exception as e:
-                logger.error(f"Error with {search_service.__name__}: {str(e)}")
-                continue
-        
-        if not search_success:
-            logger.warning(f"All search services failed for query: {query}")
+    async def _search_with_gemini_grounding(self, query: str) -> str:
+        """Búsqueda usando Gemini con grounding para queries complejas"""
+        try:
+            prompt = f"""
+            Realiza una búsqueda profunda y detallada sobre:
+            {query}
             
-        return result
+            Proporciona información precisa y actualizada, citando fuentes cuando sea posible.
+            """
+            response = await self.gemini_service.generate_content(
+                prompt,
+                {'temperature': 0.3, 'top_k': 40, 'top_p': 0.95}
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Gemini grounding search failed: {str(e)}")
+            return ""
+
+    async def _search_with_gemini_flash(self, query: str) -> str:
+        """Búsqueda usando gemini-1.5-flash para queries simples"""
+        try:
+            prompt = f"""
+            Busca información concisa sobre:
+            {query}
+            """
+            response = await self.gemini_service.generate_content(
+                prompt,
+                {'temperature': 0.7, 'top_k': 20, 'top_p': 0.8}
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Gemini flash search failed: {str(e)}")
+            return ""
 
     async def _search_with_jina(self, query: str) -> str:
         """Búsqueda principal usando Jina"""

@@ -156,19 +156,15 @@ class ReportCompiler:
             logger.debug("Starting final report compilation")
             await self.send_progress("Compiling final report")
 
-            # First compile all sections
             compiled_sections = self.compile_sections(state)
             all_sections = compiled_sections["final_report"]
 
-            # Asegurarse de que report_organization tenga un valor por defecto
             report_organization = {
                 "introduction": "1. Introducción",
                 "body": "2. Desarrollo",
                 "conclusion": "3. Conclusión",
-                #"references": "4. Referencias"
             }
             
-            # Instrucciones más específicas con límite de palabras
             system_instructions = """
             Eres un editor experto encargado de formatear un informe técnico.
             
@@ -186,10 +182,20 @@ class ReportCompiler:
             1. Mantén la información más relevante de cada sección
             2. Asegúrate de que los títulos de las secciones sean claros y consistentes
             3. Mejora las transiciones entre secciones
-            4. Mantén el formato Markdown existente sin agregar etiquetas de INICIO o FIN Solo el CONTENIDO
+            4. Mantén el formato Markdown existente sin agregar etiquetas de INICIO o FIN
             5. Prioriza mantener la información técnica y ejemplos importantes
             6. Asegúrate de que el informe esté completo y bien estructurado
             7. No excedas el límite de 32,000 palabras
+            8. IMPORTANTE: Analiza el contenido y cuando encuentres:
+               - Procesos o flujos de trabajo: Incluye diagramas de flujo usando la sintaxis Mermaid
+               - Arquitecturas o estructuras: Incluye diagramas de clase o componentes usando Mermaid
+               - Secuencias de interacciones: Incluye diagramas de secuencia usando Mermaid
+               Usa el formato:
+               ```mermaid
+               [tipo_diagrama]
+               [contenido del diagrama]
+               ```
+            9. Los diagramas deben ser claros, concisos y aportar valor al contenido
             """
 
             logger.debug("Starting to stream final report")

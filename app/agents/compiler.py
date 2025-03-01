@@ -35,7 +35,7 @@ class ReportCompiler:
             max_tokens=8192  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
 
     def format_sections(self, sections: List[Section]) -> str:
         """Format a list of sections into a structured string.

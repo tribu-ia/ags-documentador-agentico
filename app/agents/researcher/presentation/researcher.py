@@ -30,6 +30,7 @@ from app.agents.researcher.infrastructure.services.progress_notifier import Prog
 from app.agents.researcher.infrastructure.services.prompt_generation_service import PromptGenerationService
 from app.config.config import get_settings
 from app.utils.state import SectionState, Section
+from app.agents.researcher.infrastructure.services.search_complexity_evaluator import SearchComplexityEvaluator
 
 # Configuración avanzada de logging
 logging.basicConfig(
@@ -76,9 +77,14 @@ class ResearchManager:
         self.web_searcher = WebSearchUseCase(
             self.settings.jina_api_key
         )
+        
+        # Inicializar el evaluador de complejidad
+        self.complexity_evaluator = SearchComplexityEvaluator(self.language_model)
+
         self.search_web_queries = SearchWebQueriesUseCase(
             web_searcher=self.web_searcher,
-            progress_notifier=self.progress_notifier
+            progress_notifier=self.progress_notifier,
+            complexity_evaluator=self.complexity_evaluator
         )
         self.section_writer = WriteSectionUseCase(self.language_model)
         self.section_state_recovery = RecoverSectionStateUseCase(self.repository)
@@ -107,13 +113,13 @@ class ResearchManager:
         """Generate and validate search queries using multiple engines with smart selection."""
         try:
             section = state["section"]
-
             # Evaluar complejidad de la sección para determinar el método
-            complexity_score = await self._evaluate_search_complexity(
+            print(f"Evaluating complexity for section: {section.name} and {section.description} in generate_queries to researcher")
+            complexity_score = await self.complexity_evaluator.evaluate(
                 section.name,
                 section.description
             )
-
+            print("complexity_score", complexity_score)
             await self.progress_notifier.send_progress(
                 f"Generating queries for section: {section.name}"
             )
@@ -271,42 +277,14 @@ class ResearchManager:
         """Cleanup method to clear Gemini API caches when done."""
         pass
 
-    async def _evaluate_search_complexity(self, query: str, context: str) -> float:
-        """Evalúa la complejidad de la búsqueda basada en el query y contexto"""
-        try:
-            evaluation_prompt = f"""
-            Evalúa la complejidad y necesidad de información actualizada para esta búsqueda:
-            Query: {query}
-            Contexto: {context}
-
-            Responde con un número entre 0 y 1, donde:
-            - 0-0.5: Consulta simple o información general
-            - 0.6-1.0: Consulta compleja o necesita información actualizada
-            """
-
-            response = await self.language_model.generate_content(
-                evaluation_prompt,
-                {'temperature': 0.1}  # Baja temperatura para respuestas más consistentes
-            )
-
-            try:
-                score = float(response.strip())
-                return min(max(score, 0.0), 1.0)  # Asegurar que esté entre 0 y 1
-            except ValueError:
-                return 0.5  # Valor por defecto si no se puede convertir
-
-        except Exception as e:
-            logger.warning(f"Error evaluating search complexity: {str(e)}")
-            return 0.5  # Valor por defecto en caso de error
-
     async def write_section_smart(self, state: SectionState) -> dict:
         """Escribe una sección eligiendo automáticamente entre grounding y método normal"""
         try:
             section = state["section"]
             source_str = state["source_str"]
-
+            print(f"Evaluating complexity for section: {section.name} and {section.description} in write_section_smart to researcher")
             # Evaluar complejidad de la búsqueda
-            complexity_score = await self._evaluate_search_complexity(
+            complexity_score = await self.complexity_evaluator.evaluate(
                 section.name,
                 section.description
             )

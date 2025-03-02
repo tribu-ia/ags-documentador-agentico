@@ -19,14 +19,16 @@ from app.agents.researcher.infrastructure.services.search_providers import (
 )
 from app.agents.researcher.infrastructure.services.gemini_service import GeminiService
 from app.config.config import get_settings
+from app.agents.researcher.infrastructure.services.search_complexity_evaluator import SearchComplexityEvaluator
 
 # Configuración del logger
 logger = logging.getLogger(__name__)
 
 class SearchWebQueriesUseCase:
-    def __init__(self, web_searcher: WebSearchUseCase, progress_notifier: ProgressNotifier):
+    def __init__(self, web_searcher: WebSearchUseCase, progress_notifier: ProgressNotifier, complexity_evaluator: SearchComplexityEvaluator):
         self.web_searcher = web_searcher
         self.progress_notifier = progress_notifier
+        self.complexity_evaluator = complexity_evaluator
         self.settings = get_settings()
         
         # Inicializar GeminiService para búsquedas avanzadas
@@ -67,10 +69,15 @@ class SearchWebQueriesUseCase:
             await self.progress_notifier.send_progress("Starting web search")
             search_queries = state["search_queries"]
             query_list = [query.search_query for query in search_queries]
-            
-            # Intentar primero con el nuevo sistema de proveedores
-            source_str = ""
+            # Calcular la complejidad de cada query
             for query in query_list:
+                print(f"Evaluating complexity {query} in search_web_queries in execute to search_web_queries")
+                complexity_score = await self.complexity_evaluator.evaluate(
+                    query
+                )
+
+                # Intentar primero con el nuevo sistema de proveedores
+                source_str = ""
                 try:
                     # Usar Gemini para queries complejas
                     if complexity_score >= 0.7:

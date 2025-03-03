@@ -1,5 +1,7 @@
+import asyncio
 import logging
-from typing import List, Dict
+from typing import Dict, List
+
 import aiohttp
 
 logger = logging.getLogger(__name__)
@@ -17,21 +19,33 @@ async def jina_search_async(queries: List[str], api_key: str) -> List[Dict]:
                 }
                 
                 data = {
-                    "query": query,
-                    "top_k": 10,  # Número de resultados a retornar
+                    "model": "jina-deepsearch-v1",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": query
+                        }
+                    ],
+                    "stream": False,
+                    "reasoning_effort": "low"
                 }
                 
                 async with session.post(
-                    "https://api.jina.ai/v1/search",
+                    "https://deepsearch.jina.ai/v1/chat/completions",
                     headers=headers,
                     json=data
                 ) as response:
                     if response.status == 200:
                         result = await response.json()
-                        results.extend(result.get('data', []))
+                        return "\n".join(
+                            [f"{data}\n{source}" for data, source in zip(result["choices"], result["readURLs"])]
+                        )
+
                     else:
                         logger.error(f"Jina API error: {response.status}")
-                        
+            except asyncio.TimeoutError:
+                logger.error(f"Request timed out for query: {query}")
+         
             except Exception as e:
                 logger.error(f"Error in Jina search: {str(e)}")
                 continue

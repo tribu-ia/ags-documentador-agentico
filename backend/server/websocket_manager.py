@@ -29,7 +29,6 @@ class WebSocketManager:
         try:
             assignment_id = data.get("assignmentId", "")
             title = data.get("title", "")
-            assignmentId = data.get("assignmentId", "")
             description = data.get("description", "")
             if not title:
                 raise ValueError("El campo 'title' es requerido")

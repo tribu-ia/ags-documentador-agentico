@@ -1,15 +1,18 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from functools import partial
 from typing import Dict
-import logging
+
 import aiohttp
 from duckduckgo_search import DDGS
 
-from app.utils.state import SectionState
-from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
-from app.agents.researcher.infrastructure.services.progress_notifier import ProgressNotifier
+from app.agents.researcher.application.use_cases.web_search import \
+    WebSearchUseCase
+from app.agents.researcher.infrastructure.services.progress_notifier import \
+    ProgressNotifier
 from app.config.config import get_settings
+from app.utils.state import SectionState
 
 # Configuración del logger
 logger = logging.getLogger(__name__)
@@ -23,7 +26,7 @@ class SearchWebQueriesUseCase:
         
         # Configuraciones de resiliencia
         self.search_semaphore = asyncio.Semaphore(3)
-        self.timeout_config = {'search': 30, 'default': 20}
+        self.timeout_config = {'search': 60, 'default': 40}
         self.fallback_services = [
             self._search_with_jina,     # API de Búsqueda Web principal (Jina)
             self._search_with_serp,     # API de Búsqueda Web primer Respaldo
@@ -78,17 +81,23 @@ class SearchWebQueriesUseCase:
         """Servicio de búsqueda alternativo usando SERP API"""
         try:
             async with aiohttp.ClientSession() as session:
-                params = {
-                    'api_key': self.settings.serp_api_key,
-                    'q': query,
-                    'num': 10
+                headers = {
+                    'X-API-KEY': self.settings.serp_api_key,
+                    "Content-Type": "application/json"
                 }
-                async with session.get('https://serpapi.com/search', params=params) as response:
+                data = {
+                    'q': query.replace('"', "").replace("'", ""),
+                    'num': 10,
+                    "hl":"es", # Buscar en español
+                    "tbs":"qdr:m" # Traer los resultados del ultimo mes
+                }
+                async with session.post('https://google.serper.dev/search', 
+                                        headers=headers, json=data) as response:
                     if response.status == 200:
                         data = await response.json()
-                        results = data.get('organic_results', [])
+                        results = data.get('organic', [])
                         return "\n".join(
-                            f"{result.get('title', '')}\n{result.get('snippet', '')}"
+                            f"{result.get('title', '')}\n{result.get('snippet', '')}\n{result.get('link', '')}"
                             for result in results
                         )
             return ""
@@ -101,14 +110,14 @@ class SearchWebQueriesUseCase:
         try:
             ddgs = DDGS()
             results = ddgs.text(
-                query, 
+                query.replace("'","").replace('"',''), 
                 region='wt-wt',
                 safesearch='off',
                 max_results=10
             )
             
             return "\n".join(
-                f"{result.get('title', '')}\n{result.get('body', '')}"
+                f"{result.get('title', '')}\n{result.get('body', '')}\n{result.get('href', '')}"
                 for result in results
             )
         except Exception as e:

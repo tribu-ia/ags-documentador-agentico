@@ -1,4 +1,7 @@
-# Estructura Detallada del Módulo Researcher
+# AI Researcher at Tribu IA Latam | AI Builder | Machine Learning
+# Alejandro Ospina Mejía - Fecha: 25/02/2025
+
+# Estructura Detallada del Módulo Researcher 
 
 ## 📁 researcher/
 ### 📁 application/
@@ -17,7 +20,7 @@ Implementación de la lógica de negocio específica:
 - `manage_research_state.py`: Gestión de estados
 - `recover_section_state.py`: Recuperación de estados
 - `research_section.py`: Lógica de investigación
-- `search_web_queries.py`: Búsquedas web
+- `search_web_queries.py`: Búsquedas web con sistema de proveedores
 - `validate_query.py`: Validación de consultas
 - `web_search.py`: Búsqueda web
 - `write_section.py`: Escritura de secciones
@@ -32,12 +35,9 @@ Entidades principales del dominio:
 - `search_engine.py`: Motor de búsqueda
 - `language_model.py`: Modelo de lenguaje
 
-#### 📁 repositories/
-Interfaces de repositorios:
-- `research_repository.py`: Interfaz principal para persistencia
-
 #### 📁 interfaces/
 - Interfaces del dominio que definen contratos core
+- `search_provider.py`: Nueva interfaz para proveedores de búsqueda
 
 ### 📁 infrastructure/
 #### 📁 persistence/
@@ -52,6 +52,8 @@ Implementaciones de servicios externos:
 - `gemini_service.py`: Integración con Google Gemini AI
 - `progress_notifier.py`: Notificaciones de progreso
 - `prompt_generation_service.py`: Generación de prompts
+- `search_provider_manager.py`: Nuevo gestor de proveedores de búsqueda
+- `search_providers.py`: Implementaciones de proveedores de búsqueda
 - `jina_service.py`: Integración con Jina AI para búsquedas web
 
 ### 📁 presentation/
@@ -62,35 +64,62 @@ Capa de presentación:
   - Maneja la inicialización de servicios
   - Coordina las operaciones entre capas
 
-## Flujo de Datos y Dependencias
+## Sistema de Proveedores de Búsqueda
 
-1. **Presentation Layer** (`researcher.py`)
-   - Punto de entrada principal
-   - Coordina casos de uso
-   - Maneja dependencias
+### 🔍 Nuevo Sistema de Proveedores
+Implementado en `search_providers.py` y gestionado por `search_provider_manager.py`:
 
-2. **Application Layer** (use_cases)
-   - Implementa la lógica de negocio
-   - Utiliza interfaces del dominio
-   - Coordina entidades y servicios
+1. **Jerarquía de Proveedores**
+   - GeminiGroundingProvider (Prioridad 1)
+   - GeminiNormalProvider (Prioridad 2)
+   - JinaProvider (Prioridad 3)
+   - SerpProvider (Prioridad 4)
+   - DuckDuckGoProvider (Prioridad 5)
 
-3. **Domain Layer**
-   - Define entidades core
-   - Establece reglas de negocio
-   - Define interfaces de repositorio
+2. **Gestión de Disponibilidad**
+   - Verificación automática de disponibilidad
+   - Cambio dinámico entre proveedores
+   - Sistema de prioridades configurable
 
-4. **Infrastructure Layer**
-   - Implementa servicios externos
-   - Proporciona persistencia de datos
-   - Implementa notificaciones
+3. **Integración con Sistema Existente**
+   - Compatibilidad con búsquedas existentes
+   - Sistema de fallback en cascada
+   - Mantenimiento de patrones de resiliencia
 
-## Responsabilidades Principales
+## Patrones de Resiliencia Implementados
 
-- **Entidades**: Representan objetos del dominio
-- **Casos de Uso**: Implementan lógica de negocio
-- **Servicios**: Proporcionan funcionalidades externas
-- **Repositorios**: Manejan persistencia de datos
-- **ResearchManager**: Orquesta el flujo completo
+### 🛡️ Configuración de Resiliencia
+Implementada en `search_web_queries.py` con doble capa de protección:
+
+1. **Sistema de Proveedores**
+   - Gestión automática de fallos
+   - Cambio dinámico entre proveedores
+   - Priorización inteligente
+
+2. **Bulkhead Pattern**
+   - Control de concurrencia mediante `asyncio.Semaphore(3)`
+   - Limita búsquedas web simultáneas
+   - Previene sobrecarga del sistema
+
+3. **Timeout Pattern**
+   Configuraciones temporales:
+   - Búsqueda web: 30 segundos
+   - Operaciones default: 20 segundos
+
+4. **Fallback Services**
+   Sistema de respaldo en dos niveles:
+   
+   **Nivel 1: Sistema de Proveedores**
+   - Gemini Grounding (principal)
+   - Gemini Normal (primer respaldo)
+   - Jina (segundo respaldo)
+   - SERP API (tercer respaldo)
+   - DuckDuckGo (cuarto respaldo)
+
+   **Nivel 2: Sistema Legacy**
+   - Jina (principal)
+   - SERP API (primer respaldo)
+   - DuckDuckGo (segundo respaldo)
 
 ## Patrones de Diseño Utilizados
 
@@ -98,31 +127,21 @@ Capa de presentación:
 - Dependency Injection
 - Repository Pattern
 - Use Case Pattern
-- SOLID Principles 
+- Strategy Pattern (nuevo sistema de proveedores)
+- SOLID Principles
 
-## Patrones de Resiliencia Implementados
+## Flujo de Búsqueda
 
-### 🛡️ Configuración de Resiliencia
-Implementada en `search_web_queries.py` para garantizar robustez en búsquedas web:
+1. **Inicio de Búsqueda**
+   - Recepción de consulta
+   - Evaluación de complejidad
 
-1. **Bulkhead Pattern**
-   - Control de concurrencia mediante `asyncio.Semaphore(3)`
-   - Limita búsquedas web simultáneas
-   - Previene sobrecarga del sistema
+2. **Sistema de Proveedores**
+   - Intento con proveedores en orden de prioridad
+   - Gestión automática de fallos
+   - Cambio dinámico entre proveedores
 
-2. **Timeout Pattern**
-   Configuraciones temporales:
-   - Búsqueda web: 30 segundos
-   - Operaciones default: 20 segundos
-
-3. **Retry Pattern**
-   Para servicio Jina:
-   - Máximo 3 intentos
-   - Backoff exponencial
-   - Reintentos específicos para errores de conexión
-
-4. **Fallback Services**
-   Servicios de búsqueda en cascada:
-   - Jina (principal)
-   - SERP API (primer respaldo)
-   - DuckDuckGo (segundo respaldo)
+3. **Sistema de Fallback**
+   - Activación si fallan todos los proveedores
+   - Uso del sistema legacy como respaldo
+   - Garantía de continuidad del servicio

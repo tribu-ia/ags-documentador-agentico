@@ -1,14 +1,13 @@
-from typing import List
-import asyncio
+import logging
 import re
+from typing import List
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config.config import get_settings
 from app.utils.llms import LLMConfig, LLMManager, LLMType
-from app.utils.prompts import FINAL_SECTION_WRITER, FINAL_REPORT_FORMAT
-from app.utils.state import ReportState, Section, SectionState
-import logging
+from app.utils.prompts import FINAL_SECTION_WRITER
+from app.utils.state import Section
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ class ReportCompiler:
         llm_config = LLMConfig(
             temperature=0.7,  # Use deterministic output for compilation
             streaming=True,
-            max_tokens=8192  # Larger context for final compilation
+            max_tokens=8192,  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
         self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
@@ -49,27 +48,25 @@ class ReportCompiler:
         formatted_str = ""
         for idx, section in enumerate(sections, 1):
             formatted_str += f"""
-                            {'=' * 60}
+                            {"=" * 60}
                             Section {idx}: {section.name}
-                            {'=' * 60}
+                            {"=" * 60}
                             Description:
                             {section.description}
                             Requires Research: 
                             {section.research}
                             
                             Content:
-                            {section.content if section.content else '[Not yet written]'}
+                            {section.content if section.content else "[Not yet written]"}
                             """
         return formatted_str
 
     async def send_progress(self, message: str, data: dict = None):
         """Send progress updates through websocket"""
         if self.websocket:
-            await self.websocket.send_json({
-                "type": "compiler_progress",
-                "message": message,
-                "data": data
-            })
+            await self.websocket.send_json(
+                {"type": "compiler_progress", "message": message, "data": data}
+            )
 
     async def gather_completed_sections(self, state: dict) -> dict:
         """Gather and format completed sections for context."""
@@ -81,7 +78,7 @@ class ReportCompiler:
             # Retornar estado completo actualizado
             return {
                 **state,  # Mantener estado existente
-                "report_sections_from_research": formatted_sections
+                "report_sections_from_research": formatted_sections,
             }
 
         except Exception as e:
@@ -93,26 +90,30 @@ class ReportCompiler:
         try:
             section = state["section"]
             context = state.get("report_sections_from_research", "")
-            
+
             # Extraer y almacenar URLs del contexto
-            urls = re.findall(r'URL: (https?://\S+)', context)
+            urls = re.findall(r"URL: (https?://\S+)", context)
             self.sources.update(urls)
-            
+
             await self.send_progress(f"Writing final section: {section.name}")
 
             system_instructions = FINAL_SECTION_WRITER.format(
                 section_title=section.name,
                 section_topic=section.description,
-                context=context
+                context=context,
             )
 
-            section_content = await self.primary_llm.ainvoke([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content="Generate a report section based on the provided sources.")
-            ])
+            section_content = await self.primary_llm.ainvoke(
+                [
+                    SystemMessage(content=system_instructions),
+                    HumanMessage(
+                        content="Generate a report section based on the provided sources."
+                    ),
+                ]
+            )
 
             section.content = section_content.content
-            
+
             # Solo retornar los campos que necesitamos actualizar
             return {
                 "completed_sections": state.get("completed_sections", []) + [section]
@@ -142,7 +143,9 @@ class ReportCompiler:
                 references_section += f"[{idx}] {source}\n"
 
             # Join sections
-            all_sections = "\n\n".join([s.content for s in sections]) + references_section
+            all_sections = (
+                "\n\n".join([s.content for s in sections]) + references_section
+            )
 
             return {"final_report": all_sections}
 
@@ -165,9 +168,9 @@ class ReportCompiler:
                 "introduction": "1. Introducción",
                 "body": "2. Desarrollo",
                 "conclusion": "3. Conclusión",
-                #"references": "4. Referencias"
+                "references": "4. Referencias",
             }
-            
+
             # Instrucciones más específicas con límite de palabras
             system_instructions = """
             Eres un editor experto encargado de formatear un informe técnico.
@@ -194,22 +197,32 @@ class ReportCompiler:
 
             logger.debug("Starting to stream final report")
             content_buffer = []
-            
+
             # Configurar el modelo para manejar respuestas más largas
-            async for chunk in self.primary_llm.astream([
-                SystemMessage(content=system_instructions.format(
-                    report_organization=report_organization,
-                    all_sections=all_sections
-                )),
-                HumanMessage(content="Formatea las secciones del informe en un documento cohesivo y completo, respetando el límite de palabras.")
-            ], max_tokens=12000):  # Aumentamos el límite de tokens de salida
+            async for chunk in self.primary_llm.astream(
+                [
+                    SystemMessage(
+                        content=system_instructions.format(
+                            report_organization=report_organization,
+                            all_sections=all_sections,
+                        )
+                    ),
+                    HumanMessage(
+                        content="Formatea las secciones del informe en un documento cohesivo y completo, respetando el límite de palabras."
+                    ),
+                ],
+                max_tokens=12000,
+            ):  # Aumentamos el límite de tokens de salida
                 if hasattr(chunk, "content"):
                     content_buffer.append(chunk.content)
-                    await self.send_progress("final_report_chunk", {
-                        "type": "report_content",
-                        "content": chunk.content,
-                        "is_complete": False
-                    })
+                    await self.send_progress(
+                        "final_report_chunk",
+                        {
+                            "type": "report_content",
+                            "content": chunk.content,
+                            "is_complete": False,
+                        },
+                    )
 
             # Combinar todo el contenido del LLM
             llm_content = "".join(content_buffer)
@@ -223,11 +236,14 @@ class ReportCompiler:
             final_content = llm_content + references_section
 
             # Enviar el reporte completo
-            await self.send_progress("final_report_complete", {
-                "type": "report_content",
-                "content": final_content,
-                "is_complete": True
-            })
+            await self.send_progress(
+                "final_report_complete",
+                {
+                    "type": "report_content",
+                    "content": final_content,
+                    "is_complete": True,
+                },
+            )
 
             logger.debug("Final report streaming completed")
             return {"final_report": final_content}

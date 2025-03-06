@@ -1,36 +1,37 @@
 import asyncio
 import logging
-from dataclasses import dataclass
 from functools import partial
 from typing import Dict
 
 import aiohttp
 from duckduckgo_search import DDGS
 
-from app.agents.researcher.application.use_cases.web_search import \
-    WebSearchUseCase
-from app.agents.researcher.infrastructure.services.progress_notifier import \
-    ProgressNotifier
+from app.agents.researcher.application.use_cases.web_search import WebSearchUseCase
+from app.agents.researcher.infrastructure.services.progress_notifier import (
+    ProgressNotifier,
+)
 from app.config.config import get_settings
 from app.utils.state import SectionState
 
 # Configuración del logger
 logger = logging.getLogger(__name__)
 
+
 class SearchWebQueriesUseCase:
-    def __init__(self, web_searcher: WebSearchUseCase, progress_notifier: ProgressNotifier):
+    def __init__(
+        self, web_searcher: WebSearchUseCase, progress_notifier: ProgressNotifier
+    ):
         self.web_searcher = web_searcher
         self.progress_notifier = progress_notifier
         self.settings = get_settings()  # Obtenemos settings directamente
 
-        
         # Configuraciones de resiliencia
         self.search_semaphore = asyncio.Semaphore(3)
-        self.timeout_config = {'search': 60, 'default': 40}
+        self.timeout_config = {"search": 60, "default": 40}
         self.fallback_services = [
-            self._search_with_jina,     # API de Búsqueda Web principal (Jina)
-            self._search_with_serp,     # API de Búsqueda Web primer Respaldo
-            self._search_with_duckduckgo # API de Búsqueda Web Segundo Respaldo
+            self._search_with_jina,  # API de Búsqueda Web principal (Jina)
+            self._search_with_serp,  # API de Búsqueda Web primer Respaldo
+            self._search_with_duckduckgo,  # API de Búsqueda Web Segundo Respaldo
         ]
 
     async def execute(self, state: SectionState) -> Dict:
@@ -41,7 +42,7 @@ class SearchWebQueriesUseCase:
 
             # Extraer las queries
             query_list = [query.search_query for query in search_queries]
-            
+
             # Realizar búsquedas con resiliencia
             source_str = ""
             for query in query_list:
@@ -49,8 +50,7 @@ class SearchWebQueriesUseCase:
                 for search_service in self.fallback_services:
                     try:
                         result = await self._execute_with_bulkhead(
-                            partial(self._search_with_timeout, search_service),
-                            query
+                            partial(self._search_with_timeout, search_service), query
                         )
                         if result:
                             source_str += f"\n{result}"
@@ -59,7 +59,7 @@ class SearchWebQueriesUseCase:
                     except Exception as e:
                         logger.error(f"Error with {search_service.__name__}: {str(e)}")
                         continue
-                
+
                 if not search_success:
                     logger.warning(f"All search services failed for query: {query}")
 
@@ -68,8 +68,7 @@ class SearchWebQueriesUseCase:
 
         except Exception as e:
             await self.progress_notifier.send_progress(
-                "Error during web search",
-                {"error": str(e)}
+                "Error during web search", {"error": str(e)}
             )
             raise
 
@@ -82,20 +81,21 @@ class SearchWebQueriesUseCase:
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {
-                    'X-API-KEY': self.settings.serp_api_key,
-                    "Content-Type": "application/json"
+                    "X-API-KEY": self.settings.serp_api_key,
+                    "Content-Type": "application/json",
                 }
                 data = {
-                    'q': query.replace('"', "").replace("'", ""),
-                    'num': 10,
-                    "hl":"es", # Buscar en español
-                    "tbs":"qdr:m" # Traer los resultados del ultimo mes
+                    "q": query.replace('"', "").replace("'", ""),
+                    "num": 10,
+                    "hl": "es",  # Buscar en español
+                    "tbs": "qdr:m",  # Traer los resultados del ultimo mes
                 }
-                async with session.post('https://google.serper.dev/search', 
-                                        headers=headers, json=data) as response:
+                async with session.post(
+                    "https://google.serper.dev/search", headers=headers, json=data
+                ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        results = data.get('organic', [])
+                        results = data.get("organic", [])
                         return "\n".join(
                             f"{result.get('title', '')}\n{result.get('snippet', '')}\n{result.get('link', '')}"
                             for result in results
@@ -110,12 +110,12 @@ class SearchWebQueriesUseCase:
         try:
             ddgs = DDGS()
             results = ddgs.text(
-                query.replace("'","").replace('"',''), 
-                region='wt-wt',
-                safesearch='off',
-                max_results=10
+                query.replace("'", "").replace('"', ""),
+                region="wt-wt",
+                safesearch="off",
+                max_results=10,
             )
-            
+
             return "\n".join(
                 f"{result.get('title', '')}\n{result.get('body', '')}\n{result.get('href', '')}"
                 for result in results
@@ -126,7 +126,7 @@ class SearchWebQueriesUseCase:
 
     async def _search_with_timeout(self, search_func, *args, timeout=None):
         try:
-            timeout = timeout or self.timeout_config['default']
+            timeout = timeout or self.timeout_config["default"]
             async with asyncio.timeout(timeout):
                 return await search_func(*args)
         except asyncio.TimeoutError:

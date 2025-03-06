@@ -1,19 +1,18 @@
 import logging
+import re
 from typing import Dict, Optional
-from app.agents.researcher.domain.interfaces.language_model import LanguageModel
+
 from app.agents.researcher.application.decorators.metrics_decorator import track_metrics
+from app.agents.researcher.domain.interfaces.language_model import LanguageModel
 from app.utils.state import Section
 
 logger = logging.getLogger(__name__)
 
+
 class WriteSectionUseCase:
     def __init__(self, language_model: LanguageModel):
         self.language_model = language_model
-        self.default_config = {
-            'temperature': 0.1,
-            'top_p': 0.8,
-            'top_k': 40
-        }
+        self.default_config = {"temperature": 0.1, "top_p": 0.8, "top_k": 40}
 
     @track_metrics
     async def write(self, section: Section, source_str: str) -> Optional[str]:
@@ -32,17 +31,22 @@ class WriteSectionUseCase:
             logger.error(f"Error writing section: {str(e)}")
             raise
 
-    async def _try_full_content(self, section: Section, source_str: str) -> Optional[str]:
+    async def _try_full_content(
+        self, section: Section, source_str: str
+    ) -> Optional[str]:
         """Intenta escribir la sección con todo el contenido."""
         try:
             prompt = self._create_full_prompt(section, source_str)
             config = self._get_generation_config(max_tokens=8192)
-            
+
             content = await self.language_model.generate_content(prompt, config)
             if not content:
                 raise ValueError("Empty response from language model")
-            
-            return content
+
+            # Extraer y almacenar URLs del contexto
+            urls = "\nURL: ".join(re.findall(r"(https?://\S+)", source_str)[:2])
+
+            return content + urls
 
         except Exception as e:
             logger.error(f"Error in full content attempt: {str(e)}")
@@ -52,7 +56,7 @@ class WriteSectionUseCase:
         """Intenta escribir una versión reducida de la sección."""
         prompt = self._create_reduced_prompt(section, source_str)
         config = self._get_generation_config(max_tokens=2048)
-        
+
         return await self.language_model.generate_content(prompt, config)
 
     def _create_full_prompt(self, section: Section, source_str: str) -> str:
@@ -86,7 +90,4 @@ class WriteSectionUseCase:
 
     def _get_generation_config(self, max_tokens: int) -> Dict:
         """Obtiene la configuración para la generación de contenido."""
-        return {
-            **self.default_config,
-            'max_output_tokens': max_tokens
-        } 
+        return {**self.default_config, "max_output_tokens": max_tokens}

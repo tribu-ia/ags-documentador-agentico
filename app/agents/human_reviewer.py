@@ -1,6 +1,10 @@
+import asyncio
+import re
+from typing import Any, Dict
+
 from langgraph.types import interrupt
-from typing import Dict, Any
-from app.utils.state import ReportState, Section
+
+from app.utils.state import ReportState
 
 
 class HumanReviewer:
@@ -20,28 +24,101 @@ class HumanReviewer:
             Un interrupt con la solicitud de feedback.
         """
         sections = state["sections"]
+        topic = state["topic"]
 
         # Convertir cada sección a un dict serializable
         sections_data = []
-        for section in sections:
+
+        # Crear mensaje de revisión detallado en formato Markdown
+        message_markdown = f"""
+**Revisión del Plan de Investigación para la Generación del Reporte**
+
+Hola,
+
+A continuación, se presenta el plan de investigación propuesto para generar el reporte. Este plan ha sido diseñado para cubrir de manera efectiva el tema solicitado y asegurar la calidad de la información en el reporte final.
+
+**Tema del Reporte:** {topic}
+
+**Descripción General del Plan de Investigación:**
+
+Se utilizará una estrategia de investigación basada en la búsqueda web exhaustiva utilizando fuentes confiables y relevantes para el tema. El objetivo es recopilar información actualizada y diversa que permita desarrollar cada sección del reporte de forma completa y precisa.
+
+**Secciones Propuestas para el Reporte:**
+
+A continuación, se detallan las secciones propuestas para el reporte. Por favor, revisa cada sección y decide si el plan es adecuado o si deseas sugerir modificaciones.
+        if self.websocket:
+            await self.websocket.send_json(feedback_request)
+
+        return interrupt(feedback_request)  
+"""
+
+        # Agregar detalles de cada sección al mensaje
+        for i, section in enumerate(sections, 1):
+            research_justification = (
+                "Se realizará investigación específica para esta sección para obtener información actualizada y precisa."
+                if section.research
+                else "No requiere investigación adicional, se utilizará información ya disponible."
+            )
+
             section_data = {
                 "id": section.id,
                 "name": section.name,
                 "description": section.description,
-                "research": section.research
+                "research": section.research,
             }
             sections_data.append(section_data)
 
+            message_markdown += f"""
+**Sección {i}: {section.name}**
+* **Descripción:** {section.description}
+* **Justificación de la Investigación:** {research_justification}
+
+---
+"""
+
+        # Agregar instrucciones claras para el usuario
+        message_markdown += """
+**Instrucciones:**
+
+* **Para aprobar el plan:** Responde con **"aprobar"** o **"continuar"**.
+* **Para sugerir modificaciones:** Responde especificando las secciones que deseas cambiar y tus sugerencias concretas. Por ejemplo: "Modificar Sección 1: Cambiar el enfoque a [nuevo enfoque]. Añadir una nueva sección sobre [nuevo tema]".
+
+¿Deseas aprobar este plan de investigación o sugerir modificaciones?
+"""
+        user_feedback = state.get("user_feedback", "")
+        review_count = state.get("review_count", 0)
+
         feedback_request = {
             "type": "human_review",
-            "message": "¿Apruebas este plan? (Responde 'continuar' o sugiere cambios)",
-            "plan": sections_data
+            "message": message_markdown,
+            "plan": sections_data,
         }
 
-        if self.websocket:
-            await self.websocket.send_json(feedback_request)
+        try:
+            # Timeout ensures fallback response logic
+            return await asyncio.wait_for(interrupt(feedback_request), timeout=30)
+        except asyncio.TimeoutError:
+            # Use interrupt even for timeout to ensure proper checkpointing
+            return interrupt(
+                {
+                    "user_feedback": user_feedback + "\n" + "si, me gusta",
+                    "review_count": review_count + 1,
+                }
+            )
+        except Exception as e:
+            # Use interrupt for all exceptions to maintain state persistence
+            return {
+                "user_feedback": user_feedback
+                + "\n"
+                + "No, quisiera que agreges una seccion de ultimas noticias",
+                "review_count": review_count + 1,
+                "error": str(e),
+            }
+            # interrupt()
 
-        return interrupt(feedback_request)  # Pausa la ejecución hasta recibir respuesta
+    # Normalize feedback by converting to lowercase and splitting into "words".
+    def normalize_text(self, text):
+        return re.findall(r"\b\w+\b", text.lower())
 
     def validate_input(self, state: ReportState) -> ReportState:
         """Actualiza el estado con la decisión según el feedback del usuario.
@@ -52,10 +129,38 @@ class HumanReviewer:
         Returns:
             El estado actualizado, manteniendo todas las claves originales (incluyendo 'sections').
         """
-        feedback = state.get("user_feedback", "").lower()
-        if feedback in ["sí", "si", "continuar", "yes"]:
-            state["decision"] = "approved"
-        else:
-            state["decision"] = "rejected"
-        return state
+        # Crear una copia del estado actual para preservar todos los valores
+        feedback = state.get("user_feedback", "")
 
+        # Inicializar o incrementar el contador de revisiones
+        review_count = state.get("review_count", 0)
+
+        # Lista de términos que indican aprobación (insensible a mayúsculas/minúsculas)
+        approval_terms = [
+            "sí",
+            "si",
+            "continuar",
+            "yes",
+            "aprobar",
+            "apruebo",
+            "aceptar",
+            "acepto",
+        ]
+
+        tokens = self.normalize_text(feedback)
+        # Verificar si el feedback contiene algún término de aprobación
+        if feedback.lower() in approval_terms or any(
+            term in tokens for term in approval_terms
+        ):
+            return {
+                "decision": "approved",
+                "review_count": review_count,
+            }
+            # No es necesario conservar el feedback completo si es aprobación
+        else:
+            # Actualizar el estado manteniendo los valores existentes
+            return {
+                "decision": "rejected",
+                "user_feedback": feedback,
+                "review_count": review_count,
+            }

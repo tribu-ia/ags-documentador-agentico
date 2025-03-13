@@ -44,6 +44,7 @@ class ReportState(TypedDict):
     final_report: str
     user_feedback: str
     decision: str
+    review_count: int  # Contador para limitar el número de revisiones
     completed_sections: Annotated[list, operator.add]  # Send() API key
     report_sections_from_research: (
         str  # String of any completed sections from research to write final sections

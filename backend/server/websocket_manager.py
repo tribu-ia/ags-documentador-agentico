@@ -1,11 +1,13 @@
 import logging
 from typing import Dict
-import json
 
 from fastapi import WebSocket
-from langgraph.types import Command
 from langgraph.checkpoint.memory import MemorySaver
-from app.graph.report_graph import get_report_graph  # Se mantiene la función actualizada
+from langgraph.types import Command
+
+from app.graph.report_graph import (
+    get_report_graph,  # Se mantiene la función actualizada
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,7 @@ def get_report_graph(websocket=None):
     lo compila con un checkpointer (MemorySaver).
     """
     from app.graph.director import GraphDirector
+
     graph = GraphDirector.construct_report_graph(websocket=websocket)
     return graph.compile(checkpointer=MemorySaver())
 
@@ -26,8 +29,12 @@ class WebSocketManager:
     """Gestiona las conexiones WebSocket y el proceso de investigación"""
 
     def __init__(self):
-        self.active_connections: Dict[WebSocket, dict] = {}  # Estado del flujo para cada WebSocket
-        self.running_graphs: Dict[WebSocket, object] = {}  # Grafo en ejecución por WebSocket
+        self.active_connections: Dict[
+            WebSocket, dict
+        ] = {}  # Estado del flujo para cada WebSocket
+        self.running_graphs: Dict[
+            WebSocket, object
+        ] = {}  # Grafo en ejecución por WebSocket
         self.checkpoints: Dict[WebSocket, str] = {}  # Guarda el checkpoint_id usado
 
     async def connect(self, websocket: WebSocket):
@@ -52,6 +59,7 @@ class WebSocketManager:
             assignment_id = data.get("assignmentId", "")
             title = data.get("title", "")
             description = data.get("description", "")
+            user_requirements = data.get("userRequirements", "")
 
             if not title:
                 raise ValueError("El campo 'title' es requerido")
@@ -61,21 +69,18 @@ class WebSocketManager:
 
             # Definir la configuración que se pasará al grafo
             config = {
-                "configurable": {
-                    "user_id": assignment_id,
-                    "thread_id": assignment_id
-                }
+                "configurable": {"user_id": assignment_id, "thread_id": assignment_id}
             }
 
             # Construir el estado inicial, incluyendo la configuración.
             state = {
                 "assignment_id": assignment_id,
-                "topic": f"Research task: {title}\nContext: {description}",
+                "topic": f"Research task: {title}\nContext: {description}\nInitial User Requirements:{user_requirements}",
                 "sections": [],
                 "final_report": "",
                 "completed_sections": [],
                 "report_sections_from_research": "",
-                #"websocket": websocket,
+                # "websocket": websocket,
                 "checkpoint_id": checkpoint_id,
                 "configurable": config["configurable"],
             }
@@ -112,7 +117,10 @@ class WebSocketManager:
         try:
             user_feedback = data.get("user_feedback", "").strip()
 
-            if websocket not in self.running_graphs or self.running_graphs[websocket] is None:
+            if (
+                websocket not in self.running_graphs
+                or self.running_graphs[websocket] is None
+            ):
                 raise ValueError("No hay un flujo en ejecución para esta sesión")
 
             chain = self.running_graphs[websocket]
@@ -120,16 +128,18 @@ class WebSocketManager:
             assignment_id = data.get("assignmentId", "")
             # Configuración que se pasa para la reanudación.
             config = {
-                "configurable": {
-                    "user_id": assignment_id,
-                    "thread_id": assignment_id
-                }
+                "configurable": {"user_id": assignment_id, "thread_id": assignment_id}
             }
 
             # Reanudar el flujo desde el checkpoint, pasando tanto el feedback como la configuración.
             async for chunk in chain.astream(
-                Command(resume={"user_feedback": user_feedback, "checkpoint_id": assignment_id}),
-                config=config
+                Command(
+                    resume={
+                        "user_feedback": user_feedback,
+                        "checkpoint_id": assignment_id,
+                    }
+                ),
+                config=config,
             ):
                 await self.handle_stream(websocket, chunk)
 
@@ -149,7 +159,12 @@ class WebSocketManager:
             else:
                 logger.warning(f"Tipo de mensaje no soportado: {message_type}")
                 await websocket.send_json(
-                    {"type": "error", "data": {"error": f"Tipo de mensaje no soportado: {message_type}"}}
+                    {
+                        "type": "error",
+                        "data": {
+                            "error": f"Tipo de mensaje no soportado: {message_type}"
+                        },
+                    }
                 )
 
         except Exception as e:

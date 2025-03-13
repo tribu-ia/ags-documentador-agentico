@@ -1,10 +1,15 @@
 import asyncio
+import logging
 import re
 from typing import Any, Dict
 
 from langgraph.types import interrupt
 
 from app.utils.state import ReportState
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class HumanReviewer:
@@ -101,20 +106,15 @@ A continuación, se detallan las secciones propuestas para el reporte. Por favor
             # Use interrupt even for timeout to ensure proper checkpointing
             return interrupt(
                 {
-                    "user_feedback": user_feedback + "\n" + "si, me gusta",
+                    "user_feedback": user_feedback
+                    + f"\nrealimentacion #{review_count + 1}:\n"
+                    + "si, me gusta",
                     "review_count": review_count + 1,
                 }
             )
         except Exception as e:
-            # Use interrupt for all exceptions to maintain state persistence
-            return {
-                "user_feedback": user_feedback
-                + "\n"
-                + "No, quisiera que agreges una seccion de ultimas noticias",
-                "review_count": review_count + 1,
-                "error": str(e),
-            }
-            # interrupt()
+            logger.error(f"Human in the Loop Error: {str(e)}", exc_info=True)
+            raise
 
     # Normalize feedback by converting to lowercase and splitting into "words".
     def normalize_text(self, text):

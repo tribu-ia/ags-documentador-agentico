@@ -16,22 +16,21 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-class ReportPlanner:
-    """Class responsible for planning and organizing report generation."""
+class CampaignPlanner:
+    """Clase responsable de planear y organizar campañas de marketing digital."""
 
     def __init__(self, settings=None, websocket=None):
-        """Initialize ReportPlanner with configuration settings."""
+        """Initialize CampaignPlanner with configuration settings."""
         self.settings = settings or get_settings()
         self.websocket = websocket
         
-        # Initialize LLMManager with configuration
         llm_config = LLMConfig(
             temperature=0.0,
             streaming=True,
             max_tokens=2000
         )
         self.llm_manager = LLMManager(llm_config)
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
 
     async def send_progress(self, message: str, data: dict = None):
         """Send progress updates through websocket"""
@@ -42,26 +41,28 @@ class ReportPlanner:
                 "data": data
             })
 
-    async def generate_search_queries(self, topic: str) -> Queries:
-        """Generate initial search queries for the report topic.
+    async def generate_search_queries(self, product: str) -> Queries:
+        """Genera queries de búsqueda para investigar tendencias del producto.
 
         Args:
-            topic: The main topic of the report
+            product: El producto para el cual se creará la campaña
 
         Returns:
             Queries object containing generated search queries
         """
         structured_llm = self.primary_llm.with_structured_output(Queries)
-        system_instructions = REPORT_PLANNER_QUERY_WRITER.format(
-            topic=topic,
-            report_organization=self.settings.report_structure,
-            number_of_queries=self.settings.number_of_queries
-        )
+        system_instructions = """
+        Genera queries de búsqueda para investigar las siguientes áreas sobre el producto {product}:
+        1. Tendencias actuales en redes sociales
+        2. Palabras clave populares relacionadas
+        3. Campañas exitosas similares
+        4. Demografía del público objetivo
+        5. Insights del mercado actual
+        """
 
-        logger.debug(f"Generating search queries for topic: {topic}")
         return structured_llm.invoke([
-            SystemMessage(content=system_instructions),
-            HumanMessage(content="Generate search queries for planning the report sections.")
+            SystemMessage(content=system_instructions.format(product=product)),
+            HumanMessage(content="Genera queries de búsqueda para investigar el producto y sus tendencias.")
         ])
 
     async def conduct_research(self, queries: list[str]) -> str:
@@ -85,67 +86,102 @@ class ReportPlanner:
             max_tokens_per_source=1000,
             include_raw_content=False
         )
-    async def generate_sections(self, topic: str, source_str: str) -> Sections:
-        """Generate report sections based on research results.
+
+    async def generate_campaign_plan(self, product: str, source_str: str) -> dict:
+        """Generate a dynamic campaign plan using LLM and web research.
 
         Args:
-            topic: The main topic of the report
+            product: The main product of the campaign
             source_str: Formatted string of research results
 
         Returns:
-            Sections object containing generated report sections
+            Dictionary containing generated campaign sections
         """
-        structured_llm = self.primary_llm.with_structured_output(Sections)
-        system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
-            topic=topic,
-            report_organization=self.settings.report_structure,
-            context=source_str
-        )
-
-        logger.debug(f"Generating sections for topic: {topic}")
-        return structured_llm.invoke([
-            SystemMessage(content=system_instructions),
-            HumanMessage(
-                content="Generate the sections of the report. Your response must include a 'sections' field containing a list of sections. Each section must have: name, description, plan, research, and content fields."
-            )
-        ])
-
-    async def plan_report(self, state: ReportState) -> dict:
-        """Generate a dynamic report plan using LLM and web research.
-
-        Args:
-            state: Current report state containing the topic
-
-        Returns:
-            Dictionary containing generated report sections
-        """
-        topic = state["topic"]
-        logger.debug(f"Starting report planning for topic: {topic}")
+        logger.debug(f"Starting campaign planning for product: {product}")
 
         # Generate search queries
-        queries_result = await self.generate_search_queries(topic)
+        queries_result = await self.generate_search_queries(product)
         query_list = [query.search_query for query in queries_result.queries]
 
         # Conduct research
         source_str = await self.conduct_research(query_list)
 
-        # Generate sections
-        report_sections = await self.generate_sections(topic, source_str)
-        logger.debug(f"Completed report planning for topic: {topic}")
-        return {"sections": report_sections.sections}
+        # Generate campaign plan
+        campaign_plan = await self.generate_campaign_sections(product, source_str)
+        logger.debug(f"Completed campaign planning for product: {product}")
+        return {"campaign_plan": campaign_plan}
 
-    @staticmethod
-    def initiate_section_writing(state: ReportState) -> list[Send]:
-        """Initialize parallel section writing for sections requiring research.
+    async def generate_campaign_sections(self, product: str, source_str: str) -> dict:
+        """Generate campaign sections based on research results.
 
         Args:
-            state: Current report state containing sections
+            product: The main product of the campaign
+            source_str: Formatted string of research results
+
+        Returns:
+            Dictionary containing generated campaign sections
+        """
+        structured_llm = self.primary_llm.with_structured_output(Sections)
+        system_instructions = REPORT_PLANNER_INSTRUCTIONS.format(
+            topic=product,
+            report_organization=self.settings.report_structure,
+            context=source_str
+        )
+
+        logger.debug(f"Generating sections for product: {product}")
+        return structured_llm.invoke([
+            SystemMessage(content=system_instructions),
+            HumanMessage(
+                content="Generate the sections of the campaign. Your response must include a 'sections' field containing a list of sections. Each section must have: name, description, plan, research, and content fields."
+            )
+        ])
+
+    @staticmethod
+    def initiate_trend_research(state: CampaignState) -> list[Send]:
+        """Inicializa la investigación de tendencias para el producto.
+
+        Args:
+            state: Estado actual de la campaña
 
         Returns:
             List of Send objects for parallel processing
         """
-        return [
-            Send("research", {"section": section})
-            for section in state["sections"]
-            if section.research
-        ]
+        return [Send("search_product_trends", {"product": state["product"]})]
+
+
+class TrendResearchPlanner:
+    """Clase responsable de planear la investigación de tendencias de productos."""
+
+    async def generate_search_queries(self, product: str) -> Queries:
+        """Genera queries de búsqueda para investigar tendencias del producto."""
+        structured_llm = self.primary_llm.with_structured_output(Queries)
+        system_instructions = """
+        Para el producto {product}, genera queries para investigar:
+        1. Tendencias actuales en redes sociales
+        2. Volumen de búsquedas y keywords
+        3. Sentimiento del mercado
+        4. Competencia y benchmarks
+        5. Estacionalidad y ciclos de demanda
+        6. Demografía interesada
+        7. Precios y rangos de mercado
+        """
+
+        return structured_llm.invoke([
+            SystemMessage(content=system_instructions.format(product=product)),
+            HumanMessage(content="Genera queries de investigación de tendencias.")
+        ])
+
+    async def plan_product_research(self, state: dict) -> dict:
+        """Genera un plan de investigación para múltiples productos."""
+        products = state["products"]
+        research_plans = []
+
+        for product in products:
+            queries = await self.generate_search_queries(product)
+            research_plans.append({
+                "product": product,
+                "queries": queries.queries,
+                "priority": "high"  # Podría ser dinámico basado en alguna lógica
+            })
+
+        return {"research_plans": research_plans}

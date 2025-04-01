@@ -72,38 +72,3 @@ class SectionOutputState(TypedDict):
     completed_sections: list[
         Section
     ]  # Final key we duplicate in outer state for Send() API
-
-
-class ProductQuery(BaseModel):
-    """Modelo para una query de búsqueda."""
-    search_query: str
-    purpose: str
-
-
-class ProductQueries(BaseModel):
-    """Modelo para una colección de queries de búsqueda."""
-    queries: List[ProductQuery]
-
-
-class ProductTrend(BaseModel):
-    """Modelo para datos de tendencias de un producto."""
-    product: str
-    current_trends: str
-    search_volume: str
-    social_sentiment: str
-    competition: str
-    seasonality: str
-    demographics: str
-    additional_metrics: str
-    raw_data: str
-
-
-class TrendResearchState(TypedDict):
-    """Estado para el flujo de investigación de tendencias."""
-    product: str
-    research_plan: Optional[dict]
-    product_research: List[ProductTrend]
-    trend_data: Optional[str]
-    opportunity_analysis: Optional[str]
-    trend_report: Optional[str]
-    top_products: Optional[dict]

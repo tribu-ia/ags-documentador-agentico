@@ -35,7 +35,7 @@ class ReportCompiler:
             max_tokens=8192  # Larger context for final compilation
         )
         self.llm_manager = LLMManager(llm_config)
-        self.primary_llm = self.llm_manager.get_llm(LLMType.GPT_4O_MINI)
+        self.primary_llm = self.llm_manager.get_llm(LLMType.GEMINI)
 
     def format_sections(self, sections: List[Section]) -> str:
         """Format a list of sections into a structured string.
@@ -240,91 +240,3 @@ class ReportCompiler:
     def cleanup(self):
         """Cleanup method to clear LLM caches when done."""
         self.llm_manager.clear_caches()
-
-
-class TrendAnalysisCompiler:
-    """Clase responsable de compilar y analizar datos de tendencias de productos."""
-
-    def __init__(self, settings=None, websocket=None):
-        # ... (configuración similar) ...
-
-    async def gather_trend_data(self, state: dict) -> dict:
-        """Recopila datos de tendencias de todos los productos investigados."""
-        try:
-            await self.send_progress("Recopilando datos de tendencias")
-            completed_research = state.get("completed_research", [])
-            formatted_data = self.format_trend_data(completed_research)
-
-            return {
-                **state,
-                "trend_data": formatted_data
-            }
-        except Exception as e:
-            await self.send_progress("Error gathering trend data", {"error": str(e)})
-            raise
-
-    async def analyze_opportunities(self, state: dict) -> dict:
-        """Analiza las oportunidades de mercado para cada producto."""
-        try:
-            trend_data = state.get("trend_data", "")
-            
-            system_instructions = """
-            Analiza los datos de tendencias recopilados para múltiples productos.
-            Para cada producto, evalúa:
-            1. Volumen de búsqueda y tendencias
-            2. Sentimiento en redes sociales
-            3. Competencia actual
-            4. Potencial de mercado
-            5. Estacionalidad
-            
-            Clasifica los productos según su potencial de éxito en marketing digital.
-            """
-
-            analysis_result = await self.primary_llm.ainvoke([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content=f"Analiza los siguientes datos de tendencias:\n{trend_data}")
-            ])
-
-            return {
-                "opportunity_analysis": analysis_result.content,
-                "trend_data": trend_data
-            }
-
-        except Exception as e:
-            await self.send_progress("Error analyzing opportunities", {"error": str(e)})
-            raise
-
-    async def compile_trend_report(self, state: dict) -> dict:
-        """Compila el reporte final de análisis de tendencias."""
-        try:
-            analysis = state.get("opportunity_analysis", "")
-            trend_data = state.get("trend_data", "")
-
-            system_instructions = """
-            Genera un reporte detallado de análisis de tendencias que incluya:
-            1. Resumen ejecutivo de oportunidades
-            2. Ranking de productos según potencial
-            3. Datos de tendencias por producto
-            4. Recomendaciones para marketing digital
-            5. Métricas clave identificadas
-            """
-
-            final_report = await self.primary_llm.ainvoke([
-                SystemMessage(content=system_instructions),
-                HumanMessage(content=f"Datos de análisis:\n{analysis}\n\nDatos de tendencias:\n{trend_data}")
-            ])
-
-            return {
-                "trend_report": final_report.content,
-                "product_opportunities": self.extract_product_opportunities(final_report.content)
-            }
-
-        except Exception as e:
-            await self.send_progress("Error compiling trend report", {"error": str(e)})
-            raise
-
-    def extract_product_opportunities(self, report_content: str) -> dict:
-        """Extrae los productos con mejores oportunidades del reporte."""
-        # Implementar lógica para extraer productos y sus métricas
-        # Retorna un diccionario con productos y sus scores de oportunidad
-        pass
